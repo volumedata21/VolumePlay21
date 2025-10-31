@@ -64,6 +64,7 @@ function videoApp() {
                 const path = this.currentView.id;
                 videos = this.appData.videos.filter(v => 
                     // Match the folder OR any subfolder
+                    // Use forward slash for consistency
                     v.relative_path === path || 
                     (v.relative_path && v.relative_path.startsWith(path + '/'))
                 );
@@ -145,6 +146,92 @@ function videoApp() {
             this.modalVideo = null;
         },
 
+        // --- Content Rendering ---
+        escapeHTML(text) {
+            if (!text) return '';
+            return text.toString()
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        },
+
+        formatVideoDescription(text) {
+            if (!text) return 'No summary available.';
+
+            // 1. Escape all HTML first to prevent XSS
+            let escapedText = this.escapeHTML(text);
+
+            // 2. Define regex patterns
+            // Match URLs (http, https, ftp)
+            const urlRegex = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-This9+&@#\/%=~_|])/ig;
+            // Match @usernames (YouTube channels)
+            const atRegex = /@([\w\d_.-]+)/g;
+            // Match #hashtags (YouTube hashtags)
+            const hashRegex = /#([\w\d_.-]+)/g;
+
+            // 3. Apply replacements
+            let formattedText = escapedText
+                .replace(urlRegex, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
+                .replace(atRegex, (match, username) => `<a href="https://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
+                .replace(hashRegex, (match, tag) => `<a href="https://www.youtube.com/hashtag/${tag}" target="_blank" rel="noopener noreferrer">${match}</a>`)
+                .replace(/\n/g, '<br>'); // Finally, replace newlines with <br>
+
+            return formattedText;
+        },
+
+        /**
+         * Generates a "time ago" string based on your new logic.
+         * @param {string} publishedDateISO - The NFO <aired> date.
+         * @param {string} uploadedDateISO - The file modification date.
+         */
+        formatDateAgo(publishedDateISO, uploadedDateISO) {
+            if (!publishedDateISO && !uploadedDateISO) return '';
+
+            const now = new Date();
+            const today = now.toDateString(); // "Fri Oct 31 2025"
+            
+            let dateToCompare;
+            const publishedDate = new Date(publishedDateISO);
+
+            // Check if publishedDate is today
+            if (publishedDate.toDateString() === today) {
+                // It's from today, use the more accurate 'uploaded' time
+                dateToCompare = new Date(uploadedDateISO);
+            } else {
+                // It's an older video, use the NFO 'published' date
+                dateToCompare = publishedDate;
+            }
+
+            if (isNaN(dateToCompare.getTime())) {
+                // Fallback if date is invalid
+                return new Date(publishedDateISO || uploadedDateISO).toLocaleDateString();
+            }
+
+            const seconds = Math.round((now - dateToCompare) / 1000);
+            
+            const intervals = {
+                year: 31536000,
+                month: 2592000,
+                week: 604800,
+                day: 86400,
+                hour: 3600,
+                minute: 60
+            };
+
+            if (seconds < 60) return 'just now';
+            
+            let counter;
+            for (const unit in intervals) {
+                counter = Math.floor(seconds / intervals[unit]);
+                if (counter > 0) {
+                    return `${counter} ${unit}${counter !== 1 ? 's' : ''} ago`;
+                }
+            }
+            return 'just now'; // Fallback
+        },
+
         toggleFolder(path) {
             // New: Manages the open/closed state of folders in the sidebar
             const index = this.openFolderPaths.indexOf(path);
@@ -167,6 +254,7 @@ function videoApp() {
                     const result = await response.json();
                     console.warn('Scan endpoint reported errors:', result.error || 'Unknown error');
                 }
+                // *** FIX: Removed stray '.' ***
                 await this.fetchData(); // Reload all data
             } catch (e) { 
                 console.error('Error scanning library:', e); 
@@ -254,3 +342,4 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);
 });
+

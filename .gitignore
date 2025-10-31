@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Local Data (from bind mounts)
+/data/
+/videos/
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+
+# IDE / Editor config
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

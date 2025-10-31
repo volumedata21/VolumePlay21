@@ -1,0 +1,25 @@
+# Ignore Git files
+
+.git/
+.gitignore
+
+# Ignore Docker files
+
+Dockerfile
+compose.yaml
+.dockerignore
+
+# Ignore Python cache
+
+pycache/
+*.pyc
+
+# Ignore local data and video folders (these are mounted as volumes)
+
+data/
+videos/
+
+# Ignore virtual environments
+
+.venv/
+venv/

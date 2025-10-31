@@ -1,0 +1,85 @@
+/*
+  A basic dark theme for VolumePlay based on the CSS
+  variables used in the original index.html
+*/
+:root {
+  --bg-darkest: #111827; /* gray-900 */
+  --bg-medium: #1F2937; /* gray-800 */
+  --bg-darkest-op: rgba(31, 41, 55, 0.8);
+  --bg-highlight: #374151; /* gray-700 */
+  --bg-highlight-hover: #4B5563; /* gray-600 */
+
+  --text-main: #D1D5DB; /* gray-300 */
+  --text-bright: #F9FAFB; /* gray-50 */
+  --text-secondary: #9CA3AF; /* gray-400 */
+  
+  --text-highlight: #5EEAD4; /* teal-300 */
+  --highlight-ring: #5EEAD4;
+  --highlight-bg: #115E59; /* teal-800 */
+  --highlight-text: #F9FAFB;
+
+  --divider-color: #374151; /* gray-700 */
+
+  /* Specific styles from original app */
+  --feed-pill-bg: #312E81; /* indigo-900 */
+  --feed-pill-text: #E0E7FF; /* indigo-100 */
+  --feed-pill-hover-bg: #3730A3; /* indigo-800 */
+}
+
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Style for the main navigation selection */
+.main-nav-selected {
+  background-color: var(--highlight-bg);
+  color: var(--highlight-text);
+  font-weight: 600;
+}
+
+/* Style for favorited items */
+.fav-selected {
+  color: #FACC15; /* amber-400 */
+}
+
+/* For the prose/article view in the modal */
+.prose-invert {
+  color: var(--text-main);
+}
+.prose-invert a {
+  color: var(--text-highlight);
+}
+.prose-invert a:hover {
+  color: #99F6E4; /* teal-200 */
+}
+.prose-invert h1, .prose-invert h2, .prose-invert h3, .prose-invert h4 {
+  color: var(--text-bright);
+}
+.prose-invert strong {
+  color: var(--text-bright);
+}
+.prose-invert blockquote {
+  color: var(--text-secondary);
+  border-left-color: var(--text-secondary);
+}
+.prose-invert code {
+  color: #F0ABFC; /* fuchsia-300 */
+}
+
+/* Custom scrollbar for webkit (Chrome, Safari) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-darkest);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bg-highlight);
+  border-radius: 5px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bg-highlight-hover);
+}
