@@ -58,6 +58,9 @@ function videoApp() {
             } else if (viewType === 'watchLater') { // Renamed from readLater
                 // API maps is_watch_later -> is_read_later for compatibility
                 videos = this.appData.videos.filter(v => v.is_read_later); 
+            } else if (viewType === 'history') { // NEW: History View
+                // Filter for videos watched for 4 seconds or more
+                videos = this.appData.videos.filter(v => v.watched_duration >= 4);
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') { // New View Type
@@ -81,6 +84,15 @@ function videoApp() {
             }
 
             videos.sort((a, b) => {
+                // NEW: History View always sorts by last_watched (most recent first)
+                if (viewType === 'history') {
+                    // Use a fallback of 0 for videos without a last_watched date
+                    const dateA = a.last_watched ? new Date(a.last_watched) : 0;
+                    const dateB = b.last_watched ? new Date(b.last_watched) : 0;
+                    return dateB - dateA;
+                }
+                
+                // Default sort (for all other views)
                 // API maps aired -> published
                 const dateA = a.published ? new Date(a.published) : 0; 
                 const dateB = b.published ? new Date(b.published) : 0;
@@ -103,6 +115,7 @@ function videoApp() {
             }
             if (this.currentView.type === 'author') return `No videos found for: ${this.currentView.author || 'Unknown'}.`;
             if (this.currentView.type === 'folder') return 'No videos found in this folder.';
+            if (this.currentView.type === 'history') return 'No videos in your history yet.'; // NEW
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.'; // Fallback
         },
@@ -120,6 +133,7 @@ function videoApp() {
             if (type === 'all') { this.currentTitle = 'All Videos'; }
             else if (type === 'favorites') { this.currentTitle = 'Favorites'; }
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; } // Renamed
+            else if (type === 'history') { this.currentTitle = 'History'; } // NEW
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') { this.currentTitle = `Folder: ${id.split('/').pop() || '...'}`; } // Show last part of path
             else { this.currentTitle = 'All Videos'; }
@@ -137,16 +151,37 @@ function videoApp() {
         },
 
         closeModal() {
-            // This is CRITICAL to stop video playback
-            if (this.$refs.videoPlayer) {
-                this.$refs.videoPlayer.pause();
-                this.$refs.videoPlayer.src = ''; // Force stop loading
+            // CRITICAL: Stop video playback and save progress
+            if (this.modalVideo && this.$refs.videoPlayer) {
+                const videoElement = this.$refs.videoPlayer;
+                const durationWatched = videoElement.currentTime;
+
+                // Stop video playback (existing logic)
+                videoElement.pause();
+                videoElement.src = ''; 
+                
+                // Save the progress if watched for 4 or more seconds
+                this.updateVideoProgress(this.modalVideo, durationWatched);
             }
+            
             this.isModalOpen = false;
             this.modalVideo = null;
         },
 
         // --- Content Rendering ---
+        
+        /**
+         * Converts HTML entities back to characters (e.g., &amp;#39; -> ').
+         * FIX for double-encoding issue.
+         */
+        unescapeHTML(text) {
+            if (!text) return '';
+            // Create a temp element to leverage the browser's unescaping logic
+            const doc = new DOMParser().parseFromString(text, 'text/html');
+            return doc.documentElement.textContent;
+        },
+        
+        // Safety function to escape HTML special characters
         escapeHTML(text) {
             if (!text) return '';
             return text.toString()
@@ -160,8 +195,8 @@ function videoApp() {
         formatVideoDescription(text) {
             if (!text) return 'No summary available.';
 
-            // 1. Escape all HTML first to prevent XSS
-            let escapedText = this.escapeHTML(text);
+            // 1. FIX: Unescape the text first to resolve double-encoding issues
+            let cleanText = this.unescapeHTML(text);
 
             // 2. Define regex patterns
             // Match URLs (http, https, ftp)
@@ -172,7 +207,7 @@ function videoApp() {
             const hashRegex = /#([\w\d_.-]+)/g;
 
             // 3. Apply replacements
-            let formattedText = escapedText
+            let formattedText = cleanText
                 .replace(urlRegex, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
                 .replace(atRegex, (match, username) => `<a href="https://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(hashRegex, (match, tag) => `<a href="https://www.youtube.com/hashtag/${tag}" target="_blank" rel="noopener noreferrer">${match}</a>`)
@@ -190,7 +225,7 @@ function videoApp() {
             if (!publishedDateISO && !uploadedDateISO) return '';
 
             const now = new Date();
-            const today = now.toDateString(); // "Fri Oct 31 2025"
+            const today = now.toDateString(); // e.g., "Fri Oct 31 2025"
             
             let dateToCompare;
             const publishedDate = new Date(publishedDateISO);
@@ -243,12 +278,35 @@ function videoApp() {
         },
 
         // --- Data Modification ---
+        
+        // NEW: Function to send video progress to the backend
+        async updateVideoProgress(video, duration) {
+            // Check the 4-second minimum requirement on the frontend too
+            if (duration < 4) return; 
+
+            try {
+                const response = await fetch(`/api/video/${video.id}/progress`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration_watched: Math.floor(duration) })
+                });
+                const result = await response.json();
+                if (response.ok) {
+                    // Update frontend state immediately to reflect in history view
+                    video.watched_duration = result.watched_duration;
+                    video.last_watched = result.last_watched;
+                } else {
+                    console.error('Failed to save progress:', result.error);
+                }
+            } catch (e) {
+                console.error('Error saving video progress:', e);
+            }
+        },
+        
         async scanVideoLibrary(isQuiet = false) {
-            // Replaces refreshAllFeeds
             if (this.isScanning) return;
             if (!isQuiet) this.isScanning = true;
             try {
-                // Call our new scan endpoint
                 const response = await fetch('/api/scan_videos', { method: 'POST' });
                 if (!response.ok) {
                     const result = await response.json();
@@ -264,7 +322,6 @@ function videoApp() {
         },
         
         async toggleFavorite(video) {
-            // Renamed argument from article
             const originalState = video.is_favorite;
             video.is_favorite = !video.is_favorite;
             try {
@@ -279,7 +336,6 @@ function videoApp() {
         },
         
         async toggleBookmark(video) {
-            // Renamed argument and logic
             const originalState = video.is_read_later; // Mapped state
             video.is_read_later = !video.is_read_later;
             try {
@@ -299,15 +355,11 @@ function videoApp() {
 
 /**
  * New Alpine.js component for the recursive folder tree.
- * @param {object} tree - The nested folder tree object.
- * @param {string} [basePath=''] - The path prefix for this level of the tree.
  */
 function folderTree(tree, basePath = '') {
     return {
         tree: tree,
         basePath: basePath,
-        // All state (openFolderPaths, currentView) and actions (toggleFolder, setView)
-        // are read directly from the parent videoApp component scope.
         
         /** Checks if a path is in the parent's openFolderPaths array. */
         isOpen(path) { return this.openFolderPaths.includes(path); },
@@ -336,7 +388,6 @@ function folderTree(tree, basePath = '') {
 }
 
 // --- ALPINE INITIALIZATION ---
-// This registers both our main 'videoApp' and the new 'folderTree' component.
 document.addEventListener('alpine:init', () => {
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);

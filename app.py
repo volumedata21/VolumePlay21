@@ -44,6 +44,9 @@ class Video(db.Model):
     youtube_id = db.Column(db.String(100), nullable=True)      # NEW: From NFO <uniqueid>
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
+    # NEW: History fields
+    last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
+    watched_duration = db.Column(db.Integer, default=0) # Stored in seconds
 
     def to_dict(self):
         """
@@ -91,7 +94,11 @@ class Video(db.Model):
             'feed_id': self.id, 
             'link': f'/api/video/{self.id}',
             
-            'relative_path': relative_dir
+            'relative_path': relative_dir,
+            
+            # NEW: Include history fields in the dictionary
+            'last_watched': self.last_watched.isoformat() if self.last_watched else None,
+            'watched_duration': self.watched_duration
         }
 
 ## --- Helper Functions ---
@@ -146,7 +153,7 @@ def scan_videos():
             plot = None
             aired_date = None
             uploaded_date = None 
-            youtube_id = None # NEW
+            youtube_id = None 
 
             if os.path.exists(nfo_path):
                 # Try to parse NFO
@@ -156,7 +163,7 @@ def scan_videos():
                     title = root.findtext('title')
                     show_title = root.findtext('showtitle')
                     plot = root.findtext('plot') # <plot> is standard for summary
-                    youtube_id = root.findtext('uniqueid') # NEW: Read uniqueid
+                    youtube_id = root.findtext('uniqueid') 
                     aired_str = root.findtext('aired')
                     
                     if aired_str:
@@ -203,7 +210,7 @@ def scan_videos():
                     existing_video.summary = plot
                     existing_video.aired = aired_date
                     existing_video.uploaded_date = uploaded_date 
-                    existing_video.youtube_id = youtube_id # NEW
+                    existing_video.youtube_id = youtube_id
                     existing_video.thumbnail_path = thumbnail_file_path
                     updated_count += 1
                 else:
@@ -214,7 +221,7 @@ def scan_videos():
                         summary=plot,
                         aired=aired_date,
                         uploaded_date=uploaded_date, 
-                        youtube_id=youtube_id, # NEW
+                        youtube_id=youtube_id,
                         video_path=video_file_path,
                         thumbnail_path=thumbnail_file_path
                     )
@@ -355,6 +362,36 @@ def toggle_watch_later(article_id):
     video.is_watch_later = not video.is_watch_later
     db.session.commit()
     return jsonify({'is_read_later': video.is_watch_later})
+    
+# NEW API: Update Video Progress
+@app.route('/api/video/<int:video_id>/progress', methods=['POST'])
+def update_video_progress(video_id):
+    """
+    Updates the watched duration and last watched timestamp for a video.
+    Requires duration_watched in the JSON body.
+    """
+    video = Video.query.get_or_404(video_id)
+    data = request.get_json()
+    
+    # Get the duration watched from the request body
+    # Ensure it's a number and non-negative
+    try:
+        duration_watched = int(data.get('duration_watched', 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid duration_watched format"}), 400
+    
+    # Check the 4-second minimum requirement
+    if duration_watched >= 4:
+        # For simplicity, we only track the last recorded duration
+        video.watched_duration = duration_watched 
+        video.last_watched = datetime.datetime.now()
+        db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'watched_duration': video.watched_duration, 
+        'last_watched': video.last_watched.isoformat() if video.last_watched else None
+    })
 
 ## --- API: Scan ---
 

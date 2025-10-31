@@ -11,16 +11,13 @@
 
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
-    <!-- Favicons (you can update these later) -->
     <link rel="shortcut icon" href="/static/favicon/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon/favicon.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="192x192" href="/static/favicon/android-chrome-192x192.png">
 
-    <!-- Styles -->
     <link rel="stylesheet" href="/static/css/style.css">
     
-    <!-- Simple style for YouTube icon hover -->
     <style>
         .yt-icon:hover { color: #FF0000 !important; }
     </style>
@@ -32,21 +29,16 @@
     x-init="init()"
     :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen }"
 >
-    <!-- Mobile Menu Overlay -->
     <div x-show="isMobileMenuOpen" @click="isMobileMenuOpen = false" x-transition:enter="transition-opacity ease-in-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in-out duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="fixed inset-0 z-30 bg-black/60 lg:hidden" x-cloak></div>
 
-    <!-- App Container -->
     <div class="flex h-screen">
 
-        <!-- Sidebar Navigation -->
         <aside
             class="fixed inset-y-0 left-0 z-40 flex w-72 transform flex-col border-r border-[var(--divider-color)] bg-[var(--bg-medium)] transition-transform duration-300 ease-in-out lg:translate-x-0"
             :class="{ '-translate-x-full': !isMobileMenuOpen, 'translate-x-0': isMobileMenuOpen }"
             x-cloak>
 
-            <!-- Sidebar Header -->
             <div class="flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] px-4">
-                <!-- Changed Icon and Title -->
                 <a href="#" @click.prevent="setView('all'); searchQuery=''" class="flex items-center gap-3 group">
                     <i class="material-icons" style="font-size:28px;color:#4A55A2;">ondemand_video</i>
                     <span class="text-lg font-semibold text-[var(--text-bright)] group-hover:text-[var(--text-main)]">VolumePlay</span>
@@ -58,75 +50,59 @@
                 </div>
             </div>
 
-            <!-- Main Nav List -->
             <nav class="flex-1 space-y-1 overflow-y-auto px-4 pb-4">
                  <a href="#" @click.prevent="setView('all')" class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50" :class="currentView.type === 'all' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i class="material-icons" style="font-size:20px;">apps</i> All Videos</a>
                  <a href="#" @click.prevent="setView('favorites')" class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50" :class="currentView.type === 'favorites' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i class="material-icons" style="font-size:20px;">star_outline</i> Favorites</a>
                  <a href="#" @click.prevent="setView('watchLater')" class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50" :class="currentView.type === 'watchLater' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i class="material-icons" style="font-size:20px;">watch_later</i> Watch Later</a>
+                 <a href="#" @click.prevent="setView('history')" class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50" :class="currentView.type === 'history' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i class="material-icons" style="font-size:20px;">history</i> History</a>
                  <hr class="border-[var(--divider-color)] mx-4 my-2">
 
-                <!-- Smart Playlists Section (Renamed from Streams) -->
                 <div class="pt-2" x-cloak>
                     <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
                     <div class="mt-1 space-y-1">
-                        <!-- Placeholder for now -->
-                         <p class="px-3 text-xs italic text-[var(--text-secondary)]">(Coming soon)</p>
+                        <p class="px-3 text-xs italic text-[var(--text-secondary)]">(Coming soon)</p>
                     </div>
                 </div>
 
                  <hr class="border-[var(--divider-color)] mx-4 my-2">
 
-                <!-- Folders Section (Replaces Feeds) -->
                 <div class="pt-2" x-cloak>
                     <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Folders</h3>
                     
-                    <!-- NEW: Define the recursive template for the folder tree -->
-                    <!-- We use x-teleport to make it available globally -->
-                    <!-- FIX: Removed x-data and x-if from this template. It's just a template. -->
-                    <template x-teleport="body">
-                        <template id="folder-tree-template">
-                            <div class="space-y-1">
-                                <template x-for="[name, children] in sortedEntries(tree)" :key="name">
-                                    <div class="relative">
-                                        <!-- Main folder item -->
-                                        <div class="group flex items-center rounded-md pr-2 text-[var(--text-main)] hover:bg-[var(--bg-darkest)]/50"
-                                             :class="{ 'bg-[var(--highlight-bg)] text-[var(--highlight-text)]': isCurrentView(fullPath(name)) }">
-                                            
-                                            <!-- Toggle button (hidden if no children) -->
-                                            <button @click="toggle(fullPath(name))" class="p-1" :class="{'invisible': !hasChildren(children)}">
-                                                <i class="material-icons transform transition-transform text-sm"
-                                                   :class="{ 'rotate-90': isOpen(fullPath(name)) }">chevron_right</i>
-                                            </button>
-                                            
-                                            <!-- Folder name button -->
-                                            <button @click="setView('folder', fullPath(name))" class="flex flex-1 items-center gap-2 px-1 py-1.5 text-sm font-medium text-left truncate">
-                                                <i class="material-icons" style="font-size: 18px;">folder</i>
-                                                <span x-text="name"></span>
-                                            </button>
-                                        </div>
+                    <template id="folder-tree-template">
+                        <div class="space-y-1">
+                            <template x-for="[name, children] in sortedEntries(tree)" :key="name">
+                                <div class="relative">
+                                    <div class="group flex items-center rounded-md pr-2 text-[var(--text-main)] hover:bg-[var(--bg-darkest)]/50"
+                                         :class="{ 'bg-[var(--highlight-bg)] text-[var(--highlight-text)]': isCurrentView(fullPath(name)) }">
                                         
-                                        <!-- Recursive children -->
-                                        <div class="mt-1 space-y-1 pl-6" x-show="isOpen(fullPath(name)) && hasChildren(children)" x-transition>
-                                            <!-- This block recursively instantiates the template -->
-                                            <div x-data="folderTree(children, fullPath(name) + '/')">
-                                                <template x-init="$el.innerHTML = document.getElementById('folder-tree-template').innerHTML"></template>
-                                            </div>
+                                        <button @click="toggle(fullPath(name))" class="p-1" :class="{'invisible': !hasChildren(children)}">
+                                            <i class="material-icons transform transition-transform text-sm"
+                                               :class="{ 'rotate-90': isOpen(fullPath(name)) }">chevron_right</i>
+                                        </button>
+                                        
+                                        <button @click="setView('folder', fullPath(name))" class="flex flex-1 items-center gap-2 px-1 py-1.5 text-sm font-medium text-left truncate">
+                                            <i class="material-icons" style="font-size: 18px;">folder</i>
+                                            <span x-text="name"></span>
+                                        </button>
+                                    </div>
+                                    
+                                    <div class="mt-1 space-y-1 pl-6" x-show="isOpen(fullPath(name)) && hasChildren(children)" x-transition>
+                                        <div x-data="folderTree(children, fullPath(name) + '/')">
+                                            <template x-init="$el.innerHTML = document.getElementById('folder-tree-template').innerHTML"></template>
                                         </div>
                                     </div>
-                                </template>
-                            </div>
-                        </template>
+                                </div>
+                            </template>
+                        </div>
                     </template>
                     
-                    <!-- Root-level instance of the folder tree -->
-                    <!-- FIX: Wrapped in a template to prevent race condition with x-data -->
                     <template x-if="appData.folder_tree && Object.keys(appData.folder_tree).length > 0">
                         <div class="mt-1 space-y-1" x-data="folderTree(appData.folder_tree)">
                             <template x-init="$el.innerHTML = document.getElementById('folder-tree-template').innerHTML"></template>
                         </div>
                     </template>
                     
-                    <!-- Show message if no folders -->
                     <template x-if="!appData.folder_tree || Object.keys(appData.folder_tree).length === 0">
                         <p class="px-3 text-xs italic text-[var(--text-secondary)]">No folders found.</p>
                     </template>
@@ -134,10 +110,8 @@
             </nav>
         </aside>
 
-        <!-- Main Content Area -->
         <main class="flex-1 overflow-y-auto lg:pl-72">
-            <!-- Main Header -->
-             <header class="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] bg-[var(--bg-darkest)]/80 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+            <header class="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] bg-[var(--bg-darkest)]/80 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
                  <button type="button" class="-ml-2.5 p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-bright)] lg:hidden" @click="isMobileMenuOpen = true">
                      <i class="material-icons" style="font-size: 24px;">menu</i>
                  </button>
@@ -160,23 +134,19 @@
                          <option value="newest">Newest First</option>
                          <option value="oldest">Oldest First</option>
                      </select>
-                     <!-- Refresh button now scans library -->
                      <button class="p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)]" @click="scanVideoLibrary(false)" :disabled="isScanning">
                          <i class="material-icons" :class="{ 'animate-spin': isScanning }" style="font-size: 20px;">refresh</i>
                      </button>
                  </div>
              </header>
 
-            <!-- Video Grid (Replaces Article Grid) -->
             <div class="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2 lg:grid-cols-3" x-cloak>
                  <template x-if="filteredVideos.length === 0">
                      <p class="text-[var(--text-secondary)]" x-text="getEmptyMessage()"></p>
                  </template>
-                 <!-- Loop over 'filteredVideos' -->
                  <template x-for="video in filteredVideos" :key="video.id">
                      <div class="flex flex-col overflow-hidden rounded-lg bg-[var(--bg-medium)] shadow-lg">
                          <a href="#" @click.prevent="openModal(video)">
-                             <!-- Thumbnail: points to our new API endpoint -->
                              <template x-if="video.image_url">
                                  <img class="w-full object-cover aspect-video" :src="video.image_url" alt="" @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
                                  <div class="hidden w-full items-center justify-center bg-[var(--bg-darkest)] text-[var(--text-secondary)] aspect-video">(Image failed)</div>
@@ -187,38 +157,27 @@
                          </a>
                          <div class="flex flex-1 flex-col justify-between p-5">
                              <div class="flex-1">
-                                 <!-- FIX: Reduced font size from text-xl to text-lg -->
-                                 <!-- FIX: Added style for text balancing to prevent widows -->
                                  <h3 class="text-md font-semibold text-[var(--text-bright)] leading-tight" style="text-wrap: balance;">
-                                     <!-- Open modal on click -->
                                      <a href="#" @click.prevent="openModal(video)" class="hover:underline" x-text="video.title"></a>
                                  </h3>
-                                 <!-- REMOVED: Description <p> tag -->
                              </div>
-                             <!-- Author/Date moved to footer -->
                          </div>
-                         <!-- Card footer: ADDED Author and Date, justify-between -->
                          <div class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5">
-                             <!-- NEW: Author and Date Container -->
                              <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
-                                 <!-- Author Link -->
                                  <a href="#" @click.prevent="setView('author', null, video.author)" 
                                     class="block truncate font-medium text-[var(--text-highlight)] hover:underline"
                                     x-text="video.author"></a>
-                                 <!-- Date Ago: Calls new logic -->
                                  <span class="block truncate text-xs" x-text="formatDateAgo(video.published, video.uploaded)"></span>
                              </div>
-                             <!-- Icon Container -->
                              <div class="flex shrink-0 items-center gap-2">
-                                <button class="p-1" @click.prevent="toggleFavorite(video)" :class="video.is_favorite ? 'fav-selected' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="video.is_favorite ? 'star' : 'star_border'"></i></button>
-                                <button class="p-1" @click.prevent="toggleBookmark(video)" :class="video.is_watch_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="video.is_watch_later ? 'bookmark' : 'bookmark_border'"></i></button>
+                                <button class="p-1" @click.prevent="toggleFavorite(video)" :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="video.is_favorite ? 'star' : 'star_border'"></i></button>
+                                <button class="p-1" @click.prevent="toggleBookmark(video)" :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
                              </div>
                          </div>
                      </div>
                  </template>
             </div>
 
-            <!-- "Load More" Button -->
             <div class="pb-8 text-center" x-show="fullFilteredList.length > videosToShow" x-cloak>
                  <p class="mb-2 text-xs text-[var(--text-secondary)]">
                      Showing <span x-text="filteredVideos.length"></span> of <span x-text="fullFilteredList.length"></span> videos
@@ -231,11 +190,9 @@
         </main>
     </div>
 
-    <!-- Video Player Modal (Replaces Article Modal) -->
     <div x-show="isModalOpen" @keydown.escape.window="closeModal()" class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-12 sm:p-8" x-cloak>
         <div class="fixed inset-0" @click="closeModal()" x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"></div>
         
-        <!-- Modal wide, removed invalid comment -->
         <div class="relative z-10 w-full max-w-5xl overflow-hidden rounded-lg bg-[var(--bg-medium)] shadow-xl" 
              x-show="isModalOpen" 
              x-transition:enter="ease-out duration-300" x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95" x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" 
@@ -243,39 +200,30 @@
              
             <template x-if="modalVideo">
                  <div>
-                     <!-- Modal Header -->
                      <div class="border-b border-[var(--divider-color)] p-4 sm:p-5">
                          <h2 class="text-lg font-semibold text-[var(--text-bright)]" x-text="modalVideo.title"></h2>
                          <div class="mt-2 flex flex-col gap-3 sm:mt-1 sm:flex-row sm:items-center sm:justify-between sm:gap-0">
                              <div class="text-sm text-[var(--text-secondary)]">
-                                 <!-- Show Author/Show Title -->
                                  <span x-text="modalVideo.author || 'Unknown Author'"></span>
                              </div>
-                             <!-- FIX: Corrected typo 'classs' to 'class' -->
                              <div class="flex items-center gap-2">
-                                 <!-- NEW: YouTube Link (Wrapped in <template x-if> for robustness) -->
                                  <template x-if="modalVideo.youtube_id">
                                      <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" 
                                         target="_blank" 
                                         class="p-1.5 text-[var(--text-secondary)] yt-icon"
                                         title="Watch on YouTube">
-                                        <!-- Simple SVG for YouTube Icon -->
-                                        <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 0 24 24" fill="currentColor">
-                                            <path d="M12.04 24.02c-6.61 0-11.98-5.38-11.98-12.02S5.43-.02 12.04-.02s11.98 5.38 11.98 12.02c0 6.64-5.37 12.02-11.98 12.02zM10.02 17.5l6.53-4.52-6.53-4.52v9.04z"></path>
-                                        </svg>
+                                        <i class="material-icons" style="font-size: 20px;">smart_display</i>
                                      </a>
                                  </template>
-                                 <!-- Standard Buttons -->
-                                 <button class="p-1.5" @click.prevent="toggleFavorite(modalVideo)" :class="modalVideo.is_favorite ? 'fav-selected' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i></button>
-                                 <button class="p-1.5" @click.prevent="toggleBookmark(modalVideo)" :class="modalVideo.is_watch_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_watch_later ? 'bookmark' : 'bookmark_border'"></i></button>
+                                 <button class="p-1.5" @click.prevent="toggleFavorite(modalVideo)" :class="modalVideo.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i></button>
+                                 <button class="p-1.5" @click.prevent="toggleBookmark(modalVideo)" :class="modalVideo.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i></button>
                                  <button class="ml-2 h-8 w-8 flex-shrink-0 rounded-full bg-[var(--bg-darkest)] flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-highlight)] hover:text-[var(--text-bright)]" @click="closeModal()">
-                                     <i class="material-icons" style="font-size: 20px;">close</i>
+                                     <i class="material-icons" style="font-size: 20px;">cancel</i>
                                  </button>
                              </div>
                          </div>
                      </div>
                      
-                     <!-- Modal Content: Replaced with Video Player -->
                      <div class="p-0 bg-black">
                          <video x-if="modalVideo"
                                 class="w-full max-h-[80vh] h-auto"
@@ -288,7 +236,6 @@
                              Your browser does not support the video tag.
                          </video>
                      </div>
-                     <!-- Summary/Plot shown *below* the video -->
                      <div class="max-h-[25vh] overflow-y-auto p-4 sm:p-5">
                           <div class="prose prose-sm prose-invert max-w-none text-[var(--text-main)]" style="overflow-wrap: break-word;" x-html="formatVideoDescription(modalVideo.summary || 'No summary available.')"></div>
                      </div>
