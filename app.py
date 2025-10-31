@@ -41,6 +41,7 @@ class Video(db.Model):
     thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
     aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
     uploaded_date = db.Column(db.DateTime(timezone=False))     # NEW: From file mtime
+    youtube_id = db.Column(db.String(100), nullable=True)      # NEW: From NFO <uniqueid>
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
 
@@ -84,6 +85,7 @@ class Video(db.Model):
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
+            'youtube_id': self.youtube_id, # NEW: Pass the YouTube ID
             
             'feed_title': self.show_title or 'Local Media',
             'feed_id': self.id, 
@@ -143,7 +145,8 @@ def scan_videos():
             show_title = None
             plot = None
             aired_date = None
-            uploaded_date = None # NEW
+            uploaded_date = None 
+            youtube_id = None # NEW
 
             if os.path.exists(nfo_path):
                 # Try to parse NFO
@@ -153,6 +156,7 @@ def scan_videos():
                     title = root.findtext('title')
                     show_title = root.findtext('showtitle')
                     plot = root.findtext('plot') # <plot> is standard for summary
+                    youtube_id = root.findtext('uniqueid') # NEW: Read uniqueid
                     aired_str = root.findtext('aired')
                     
                     if aired_str:
@@ -198,7 +202,8 @@ def scan_videos():
                     existing_video.show_title = show_title
                     existing_video.summary = plot
                     existing_video.aired = aired_date
-                    existing_video.uploaded_date = uploaded_date # NEW
+                    existing_video.uploaded_date = uploaded_date 
+                    existing_video.youtube_id = youtube_id # NEW
                     existing_video.thumbnail_path = thumbnail_file_path
                     updated_count += 1
                 else:
@@ -208,7 +213,8 @@ def scan_videos():
                         show_title=show_title,
                         summary=plot,
                         aired=aired_date,
-                        uploaded_date=uploaded_date, # NEW
+                        uploaded_date=uploaded_date, 
+                        youtube_id=youtube_id, # NEW
                         video_path=video_file_path,
                         thumbnail_path=thumbnail_file_path
                     )
@@ -232,6 +238,7 @@ def build_folder_tree(paths):
     """
     tree = {}
     for path in paths:
+        # We already normalized to '/' in the to_dict() function.
         parts = path.split('/')
         
         # Handle the root directory case
@@ -285,13 +292,13 @@ def get_data():
     # We use a set to automatically get unique folder paths
     relative_paths = set(v['relative_path'] for v in video_dtos if v['relative_path'] != '.')
     
-    # --- DEBUGGING: Print the paths we're about to build a tree from ---
+    # Add a debug print to see what paths are being processed
     print(f"DEBUG: Relative paths for tree: {relative_paths}")
     
     # Build the nested dictionary tree
     folder_tree = build_folder_tree(relative_paths)
 
-    # --- DEBUGGING: Print the final tree ---
+    # Add a debug print to see what paths are being processed
     print(f"DEBUG: Built folder tree: {folder_tree}")
     
     return jsonify({
@@ -373,4 +380,3 @@ if __name__ == '__main__':
     # This block only runs when you execute `python app.py` directly
     debug_mode = os.environ.get('FLASK_DEBUG') == '1'
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)
-

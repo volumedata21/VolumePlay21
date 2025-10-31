@@ -165,7 +165,7 @@ function videoApp() {
 
             // 2. Define regex patterns
             // Match URLs (http, https, ftp)
-            const urlRegex = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-This9+&@#\/%=~_|])/ig;
+            const urlRegex = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
             // Match @usernames (YouTube channels)
             const atRegex = /@([\w\d_.-]+)/g;
             // Match #hashtags (YouTube hashtags)
@@ -254,7 +254,6 @@ function videoApp() {
                     const result = await response.json();
                     console.warn('Scan endpoint reported errors:', result.error || 'Unknown error');
                 }
-                // *** FIX: Removed stray '.' ***
                 await this.fetchData(); // Reload all data
             } catch (e) { 
                 console.error('Error scanning library:', e); 
@@ -342,4 +341,3 @@ document.addEventListener('alpine:init', () => {
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);
 });
-

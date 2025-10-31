@@ -19,6 +19,11 @@
 
     <!-- Styles -->
     <link rel="stylesheet" href="/static/css/style.css">
+    
+    <!-- Simple style for YouTube icon hover -->
+    <style>
+        .yt-icon:hover { color: #FF0000 !important; }
+    </style>
 
 </head>
 <body
@@ -200,8 +205,8 @@
                                  <a href="#" @click.prevent="setView('author', null, video.author)" 
                                     class="block truncate font-medium text-[var(--text-highlight)] hover:underline"
                                     x-text="video.author"></a>
-                                 <!-- Date Ago -->
-                                 <span class="block truncate text-xs" x-text="formatDateAgo(video.published)"></span>
+                                 <!-- Date Ago: Calls new logic -->
+                                 <span class="block truncate text-xs" x-text="formatDateAgo(video.published, video.uploaded)"></span>
                              </div>
                              <!-- Icon Container -->
                              <div class="flex shrink-0 items-center gap-2">
@@ -246,8 +251,21 @@
                                  <!-- Show Author/Show Title -->
                                  <span x-text="modalVideo.author || 'Unknown Author'"></span>
                              </div>
-                             <div classs="flex items-center gap-2">
-                                 <!-- Simplified buttons: Removed Share and Open in New -->
+                             <!-- FIX: Corrected typo 'classs' to 'class' -->
+                             <div class="flex items-center gap-2">
+                                 <!-- NEW: YouTube Link (Wrapped in <template x-if> for robustness) -->
+                                 <template x-if="modalVideo.youtube_id">
+                                     <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" 
+                                        target="_blank" 
+                                        class="p-1.5 text-[var(--text-secondary)] yt-icon"
+                                        title="Watch on YouTube">
+                                        <!-- Simple SVG for YouTube Icon -->
+                                        <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 0 24 24" fill="currentColor">
+                                            <path d="M12.04 24.02c-6.61 0-11.98-5.38-11.98-12.02S5.43-.02 12.04-.02s11.98 5.38 11.98 12.02c0 6.64-5.37 12.02-11.98 12.02zM10.02 17.5l6.53-4.52-6.53-4.52v9.04z"></path>
+                                        </svg>
+                                     </a>
+                                 </template>
+                                 <!-- Standard Buttons -->
                                  <button class="p-1.5" @click.prevent="toggleFavorite(modalVideo)" :class="modalVideo.is_favorite ? 'fav-selected' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i></button>
                                  <button class="p-1.5" @click.prevent="toggleBookmark(modalVideo)" :class="modalVideo.is_watch_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i class="material-icons" style="font-size: 20px;" x-text="modalVideo.is_watch_later ? 'bookmark' : 'bookmark_border'"></i></button>
                                  <button class="ml-2 h-8 w-8 flex-shrink-0 rounded-full bg-[var(--bg-darkest)] flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--bg-highlight)] hover:text-[var(--text-bright)]" @click="closeModal()">
