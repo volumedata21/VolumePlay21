@@ -241,6 +241,20 @@ function videoApp() {
         },
         
         // --- UI Actions ---
+        
+        // NEW HELPER FUNCTION FOR NAVIGATION FROM MODAL
+        navigateToAuthorFilter(author) {
+            // 1. Close the modal first. closeModal pauses the video and sets isModalOpen=false 
+            // and modalVideo=null, preventing issues where the next action might fail.
+            this.closeModal();
+
+            // 2. Use $nextTick to ensure the view change (which triggers fullFilteredList re-computation) 
+            // runs after the current click handler and its state changes are complete.
+            this.$nextTick(() => {
+                this.setView('author', null, author);
+            });
+        },
+        
         setView(type, id = null, author = null) {
             // Write to the global state (FolderTree uses this)
             Alpine.store('globalState').currentView = { type: type, id: id, author: author };
