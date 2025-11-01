@@ -17,7 +17,9 @@ function videoApp() {
             videos: [],            
             folder_tree: {}      
         },
-        videosToShow: 75,          
+        videosToShow: 75,
+        // NEW: History Stack for filter navigation
+        filterHistory: [], 
 
         // --- Init ---
         init() {
@@ -241,21 +243,50 @@ function videoApp() {
         },
         
         // --- UI Actions ---
-        
-        // NEW HELPER FUNCTION FOR NAVIGATION FROM MODAL
-        navigateToAuthorFilter(author) {
-            // 1. Close the modal first. closeModal pauses the video and sets isModalOpen=false 
-            // and modalVideo=null, preventing issues where the next action might fail.
-            this.closeModal();
 
-            // 2. Use $nextTick to ensure the view change (which triggers fullFilteredList re-computation) 
-            // runs after the current click handler and its state changes are complete.
-            this.$nextTick(() => {
-                this.setView('author', null, author);
-            });
+        // NEW: Function to go back one filter step
+        goBackOneFilter() {
+            if (this.filterHistory.length === 0) return;
+
+            // Pop the last saved state
+            const lastView = this.filterHistory.pop();
+
+            // 1. Apply the previous view state directly, bypassing the history-saving logic in setView
+            Alpine.store('globalState').currentView = { 
+                type: lastView.type, 
+                id: lastView.id, 
+                author: lastView.author 
+            };
+
+            // 2. Update local state and title
+            this.currentView = Alpine.store('globalState').currentView;
+            this.currentTitle = lastView.title; // Use the saved title
+            
+            // 3. Reset display count
+            this.videosToShow = 75;
         },
-        
+
         setView(type, id = null, author = null) {
+            
+            // 1. Check if the current view should be saved to history
+            const currentView = Alpine.store('globalState').currentView;
+            
+            // CRITICAL: Save the previous state if we are moving from a 'folder' view to a NEW 'folder' view
+            if (currentView.type === 'folder' && type === 'folder' && currentView.id !== id) {
+                // Save only the essential view state and current title
+                this.filterHistory.push({
+                    type: currentView.type,
+                    id: currentView.id,
+                    author: currentView.author,
+                    title: this.currentTitle // Save the current user-friendly title
+                });
+            }
+            
+            // Clear history if navigating to 'all' or another primary view type
+            if (type !== 'folder') {
+                this.filterHistory = [];
+            }
+
             // Write to the global state (FolderTree uses this)
             Alpine.store('globalState').currentView = { type: type, id: id, author: author };
             

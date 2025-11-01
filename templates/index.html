@@ -77,10 +77,81 @@
                 <!-- Separator after History -->
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
+                <!-- NEW: Smart Playlists (Drag Targets) -->
                 <div class="pt-2" x-cloak>
-                    <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
+                    <div class="flex items-center justify-between px-3">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
+                        <button @click="createPlaylist()"
+                            class="p-1 -my-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+                            title="Create New Playlist">
+                            <i class="material-icons" style="font-size: 18px;">add</i>
+                        </button>
+                    </div>
+
                     <div class="mt-1 space-y-1">
-                        <p class="px-3 text-xs italic text-[var(--text-secondary)]">(Coming soon)</p>
+                        <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
+                            <div class="relative group" @dragover.prevent
+                                @drop="handlePlaylistDrop(playlist.id, $event)">
+
+                                <a href="#" @click.prevent="setView('smart_playlist', playlist.id)"
+                                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
+                                    :class="currentView.type === 'smart_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
+
+                                    <i class="material-icons" style="font-size:20px;">playlist_play</i>
+
+                                    <!-- Playlist Name -->
+                                    <span class="truncate flex-1" x-text="playlist.name"></span>
+
+                                    <!-- Tag Count -->
+                                    <span class="text-xs text-[var(--text-secondary)]/70"
+                                        x-text="playlist.tags.length > 0 ? playlist.tags.length : ''"></span>
+
+                                    <!-- Actions Menu (Edit/Delete) -->
+                                    <div class="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button @click.stop.prevent="$refs.menu.classList.toggle('hidden')"
+                                            class="p-1 -m-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)]">
+                                            <i class="material-icons" style="font-size: 18px;">more_vert</i>
+                                        </button>
+
+                                        <div x-ref="menu" @click.outside="$refs.menu.classList.add('hidden')"
+                                            class="hidden absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-[var(--bg-darkest)] ring-1 ring-black ring-opacity-5 focus:outline-none">
+                                            <div class="py-1">
+                                                <a href="#"
+                                                    @click.prevent="renamePlaylist(playlist.id, prompt('Rename playlist:', playlist.name))"
+                                                    class="flex items-center px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                    <i class="material-icons text-base mr-2">edit</i> Rename
+                                                </a>
+                                                <a href="#" @click.prevent="deletePlaylist(playlist.id)"
+                                                    class="flex items-center px-4 py-2 text-sm text-red-500 hover:bg-red-900/50">
+                                                    <i class="material-icons text-base mr-2">delete</i> Delete
+                                                </a>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </a>
+
+                                <!-- Tags inside the Playlist View -->
+                                <template
+                                    x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.tags.length > 0">
+                                    <div
+                                        class="flex flex-wrap gap-1 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
+                                        <span
+                                            class="text-xs font-semibold text-[var(--text-secondary)] mr-1">Tags:</span>
+                                        <template x-for="tag in playlist.tags" :key="tag">
+                                            <a href="#" @click.prevent="removeTagFromPlaylist(playlist.id, tag)"
+                                                class="inline-block text-xs font-medium text-white px-1.5 py-0.5 rounded-full cursor-pointer transition-colors duration-150 group-hover:bg-red-500/50"
+                                                style="background-color: #233b4b;" x-text="tag"
+                                                title="Click to remove tag from playlist">
+                                            </a>
+                                        </template>
+                                    </div>
+                                </template>
+
+                            </div>
+                        </template>
+                        <p x-show="appData.smartPlaylists.length === 0"
+                            class="px-3 text-xs italic text-[var(--text-secondary)]">No playlists created. Click '+' to
+                            start.</p>
                     </div>
                 </div>
 
@@ -91,7 +162,14 @@
                     <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
                     <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
 
-                        <!-- Permanent Clear All Tag -->
+                        <!-- NEW: Back Button (Icon only, uses filter history) -->
+                        <button x-show="filterHistory.length > 0" @click.prevent="goBackOneFilter()"
+                            class="inline-flex items-center justify-center h-7 w-7 rounded-full text-[var(--text-main)] hover:text-[var(--text-bright)] hover:bg-[var(--bg-highlight)]/50 transition-colors"
+                            title="Go back one step (Filter History)">
+                            <span class="material-icons" style="font-size: 20px;">arrow_back</span>
+                        </button>
+
+                        <!-- Permanent Clear All Tag (Now next to Back button) -->
                         <a href="#" @click.prevent="filterByFolderTag('clear_all')"
                             x-show="currentView.type === 'folder' && currentView.id"
                             class="inline-block text-sm font-medium text-[var(--text-main)] hover:text-white px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
@@ -100,9 +178,11 @@
                         </a>
 
                         <template x-for="tag in getDynamicTags" :key="tag">
-                            <a href="#" @click.prevent="filterByFolderTag(tag)"
+                            <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
+                                draggable="true"
                                 class="inline-block text-sm font-medium text-[var(--text-highlight)] hover:text-white hover:underline px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                style="background-color: #233b4b;" x-text="tag" :title="'Filter by: ' + tag">
+                                style="background-color: #233b4b;" x-text="tag"
+                                :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
                             </a>
                         </template>
                         <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
@@ -128,18 +208,30 @@
                     <i class="material-icons" style="font-size: 24px;">menu</i>
                 </button>
                 <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
-                    <!-- Filter Clear button uses 'cancel' icon and 24px size, no background circle --><button
+
+                    <button
                         x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'custom_stream' || currentView.type === 'category'"
                         @click="setView('all'); searchQuery=''"
                         class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
-                        title="Clear filter" x-transition:enter="transition ease-out duration-100"
+                        title="Clear all filters" x-transition:enter="transition ease-out duration-100"
                         x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
                         x-transition:leave="transition ease-in duration-75"
                         x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
                         x-cloak>
                         <span class="material-icons" style="font-size: 24px;">cancel</span>
                     </button>
-                    <div class="min-w-0 flex-1 flex items-center"> <!-- Added flex and items-center here -->
+
+                    <button x-show="filterHistory.length > 0" @click="goBackOneFilter()"
+                        class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+                        title="Go back one filter step" x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        x-cloak>
+                        <span class="material-icons" style="font-size: 24px;">arrow_back</span>
+                    </button>
+
+                    <div class="min-w-0 flex-1 flex items-center">
                         <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentTitle"></h1>
                     </div>
                 </div>

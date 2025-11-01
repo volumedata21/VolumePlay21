@@ -48,9 +48,11 @@ body {
 .prose-invert {
   color: var(--text-main);
 }
+/* Base color for links in prose */
 .prose-invert a {
   color: var(--text-highlight);
 }
+/* Hover color for links in prose */
 .prose-invert a:hover {
   color: #99F6E4; /* teal-200 */
 }
@@ -82,4 +84,50 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--bg-highlight-hover);
+}
+
+
+/* ---------------------------------------------------------------- */
+/* --- NEW CONSOLIDATED FIXES: Icons and Underlines --- */
+/* ---------------------------------------------------------------- */
+
+/* Fix 1: Material Icons Alignment (line-height fix) */
+.material-icons {
+    line-height: 1; 
+    vertical-align: middle;
+    display: inline-flex;
+}
+
+/* Fix 2: Global Underline Suppression for ALL Links */
+/* Use !important to override Tailwind's base/utility classes like hover:underline. */
+a, a:hover, a:focus {
+    text-decoration: none !important;
+    transition: color 150ms ease-in-out; /* Enable smooth color transition */
+}
+
+/* Fix 3: Ensure Specific Link Color Changes on Hover (Tags and Titles) */
+
+/* a) Hover fix for Filter Tags (Sidebar and Main Feed Author Pills) */
+/* These are the elements that use text-[var(--text-highlight)] */
+.inline-block.text-[var(--text-highlight)]:hover,
+.inline-block.text-[var(--text-highlight)]:focus {
+    /* Explicitly set the hover color change to replace the missing underline cue. */
+    color: var(--text-bright) !important; 
+}
+
+/* b) Hover fix for Title Links (e.g., video titles in the main feed) */
+/* These are the elements that rely on the generic 'hover:underline' Tailwind class */
+.flex-1 h3 a:hover, 
+.flex-1 h3 a:focus,
+.text-md a.hover\:underline:hover,
+.text-md a.hover\:underline:focus {
+    /* If the title's base color is text-[var(--text-bright)], change it to text-secondary for feedback. */
+    color: var(--text-secondary) !important;
+}
+
+/* c) Reinforce Prose Hover Color (Modal Description Links) */
+/* Already defined above, but we reinforce that the color change is the only effect. */
+.prose-invert a:hover {
+    text-decoration: none !important;
+    color: #99F6E4; /* teal-200 */
 }
