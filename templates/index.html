@@ -168,7 +168,7 @@
                                                 Search Text (Use quotes for exact phrase match)
                                             </label>
                                             <input type="text" x-model="textValue"
-                                                @keydown.enter.prevent="applyFilter()"
+                                                @keydown.enter.prevent="$event.target.blur(); applyFilter()"
                                                 class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
                                                 placeholder="e.g. 'time' or 'space exploration'">
                                         </div>

@@ -304,12 +304,34 @@ function videoApp() {
         },
 
         // PLACEHOLDER: We will implement renaming in a future step
-        renamePlaylist(playlist) {
-            // Note: We use a placeholder here for the UI, but will replace 'prompt' later for better UX
+        async renamePlaylist(playlist) {
             const newName = prompt(`Rename playlist '${playlist.name}':`, playlist.name);
-            if (newName && newName.trim() !== '' && newName !== playlist.name) {
-                // Implement API call for renaming here later
-                console.log(`Placeholder: Renaming playlist ${playlist.id} to ${newName}`);
+            
+            if (!newName || newName.trim() === '' || newName.trim() === playlist.name) {
+                return; // User cancelled or name is unchanged
+            }
+
+            try {
+                const response = await fetch(`/api/playlist/${playlist.id}/rename`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+
+                if (response.ok) {
+                    const updatedPlaylist = await response.json();
+                    // Update the name on the original object for reactivity
+                    playlist.name = updatedPlaylist.name;
+                    // Update the main title if we are currently viewing this playlist
+                    if (this.currentView.type === 'smart_playlist' && this.currentView.id === playlist.id) {
+                        this.updateTitle();
+                    }
+                } else {
+                    const result = await response.json();
+                    console.error('Failed to rename playlist:', result.error);
+                }
+            } catch (e) {
+                console.error('Error renaming playlist:', e);
             }
         },
 
@@ -349,11 +371,28 @@ function videoApp() {
             console.log(`Placeholder: Removing tag '${tag}' from playlist ${playlistId}`);
         },
 
-        // NEW: Placeholder function for deleting a filter from a playlist
-        removeFilterFromPlaylist(playlistId, filterId) {
-            if (confirm('Are you sure you want to remove this filter?')) {
-                // We will implement the API call to the backend in the next step
-                console.log(`Placeholder: Removing filter ${filterId} from playlist ${playlistId}`);
+        async removeFilterFromPlaylist(playlistId, filterId) {
+            
+            try {
+                const response = await fetch(`/api/playlist/${playlistId}/filter/remove`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filterId: filterId })
+                });
+
+                if (response.ok) {
+                    const updatedPlaylist = await response.json();
+                    // Find and replace the old playlist object with the new one to ensure reactivity
+                    const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
+                    if (index !== -1) {
+                        this.appData.smartPlaylists.splice(index, 1, updatedPlaylist);
+                    }
+                } else {
+                    const result = await response.json();
+                    console.error('Failed to remove filter:', result.error);
+                }
+            } catch (e) {
+                console.error('Error removing filter:', e);
             }
         },
 
@@ -366,15 +405,17 @@ function videoApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filter: filter })
                 });
-                const updatedPlaylist = await response.json();
+                const updatedPlaylist = await response.json(); // This contains the new list of filters
 
                 if (response.ok) {
-                    // Find and replace the old playlist object with the new one
+                    // Find the *local* playlist object
                     const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
                     if (index !== -1) {
-                        // Use splice to ensure reactivity
-                        // FIXED: Corrected typo 'smartPlayF' to 'smartPlaylists'
-                        this.appData.smartPlaylists.splice(index, 1, updatedPlaylist);
+                        // --- THIS IS THE KEY ---
+                        // Instead of replacing the whole object with splice,
+                        // just update the 'filters' array on the *existing* object.
+                        // This preserves the object reference and makes reactivity simple.
+                        this.appData.smartPlaylists[index].filters = updatedPlaylist.filters;
                     }
                 } else {
                     console.error('Failed to save filter to playlist:', updatedPlaylist.error);

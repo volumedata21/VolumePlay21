@@ -347,22 +347,41 @@ def delete_playlist(playlist_id):
 @app.route('/api/playlist/<int:playlist_id>/filter', methods=['POST'])
 def add_playlist_filter(playlist_id):
     
-    """Adds a new filter object to a smart playlist."""
+    """Adds a new filter object to a smart playlist, checking for duplicates."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     new_filter = data.get('filter')
     
-    if not new_filter or not isinstance(new_filter, dict):
+    if not new_filter or not isinstance(new_filter, dict) or not new_filter.get('value'):
         return jsonify({"error": "Valid filter object required"}), 400
     
     try:
-        # 1. Load existing filters from JSON (ensure safe defaults)
+        # 1. Load existing filters
         filters_list = json.loads(playlist.filters) if playlist.filters else []
         
-        # 2. Append the new filter
+        # 2. --- CHECK FOR DUPLICATES ---
+        # Normalize the new filter's value for comparison
+        new_value = str(new_filter.get('value', '')).lower().strip()
+        new_type = new_filter.get('type')
+
+        found_duplicate = False
+        for f in filters_list:
+            existing_value = str(f.get('value', '')).lower().strip()
+            existing_type = f.get('type')
+            
+            # If a filter with the same type and value already exists, mark it.
+            if existing_type == new_type and existing_value == new_value:
+                found_duplicate = True
+                break
+        
+        # 3. If a duplicate is found, just return the playlist as-is.
+        if found_duplicate:
+            return jsonify(playlist.to_dict()), 200
+
+        # 4. No duplicate found, so append the new filter
         filters_list.append(new_filter)
         
-        # 3. Save back to the database as JSON string
+        # 5. Save back to the database
         playlist.filters = json.dumps(filters_list)
         db.session.commit()
         
@@ -374,6 +393,56 @@ def add_playlist_filter(playlist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
+# --- ADDED FUNCTIONS ---
+# (Make sure these start with NO indentation)
+
+@app.route('/api/playlist/<int:playlist_id>/rename', methods=['POST'])
+def rename_playlist(playlist_id):
+    """Renames a smart playlist."""
+    playlist = SmartPlaylist.query.get_or_404(playlist_id)
+    data = request.get_json()
+    name = data.get('name')
+    
+    if not name or name.strip() == '':
+        return jsonify({"error": "Playlist name is required"}), 400
+        
+    try:
+        playlist.name = name.strip()
+        db.session.commit()
+        return jsonify(playlist.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/playlist/<int:playlist_id>/filter/remove', methods=['POST'])
+def remove_playlist_filter(playlist_id):
+    """Removes a specific filter object from a smart playlist."""
+    playlist = SmartPlaylist.query.get_or_404(playlist_id)
+    data = request.get_json()
+    filter_id_to_remove = data.get('filterId')
+    
+    if not filter_id_to_remove:
+        return jsonify({"error": "Valid filterId required"}), 400
+    
+    try:
+        # 1. Load existing filters
+        filters_list = json.loads(playlist.filters) if playlist.filters else []
+        
+        # 2. Create a new list *without* the filter to be removed
+        new_filters_list = [f for f in filters_list if f.get('id') != filter_id_to_remove]
+        
+        # 3. Save back to the database
+        playlist.filters = json.dumps(new_filters_list)
+        db.session.commit()
+        
+        return jsonify(playlist.to_dict()), 200
+        
+    except json.JSONDecodeError:
+        return jsonify({"error": "Failed to decode existing playlist filters"}), 500
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 ## --- API: Video/Thumbnail Serving ---
 
