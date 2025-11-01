@@ -476,7 +476,7 @@ function videoApp() {
                 }
             });
         },
-        
+
         // START: AUTOPLAY REFACTOR
         stopAndSaveVideo() {
             // Helper function to stop playback and save progress
@@ -498,7 +498,15 @@ function videoApp() {
             this.isModalOpen = false;
             this.modalVideo = null;
         },
-        
+
+        navigateToAuthorFilter(author) {
+            this.closeModal();
+            // Use $nextTick to ensure modal is fully closed before changing view
+            this.$nextTick(() => {
+                this.setView('author', null, author);
+            });
+        },
+
         handleVideoEnd() {
             // 1. Save progress of the video that just finished
             this.stopAndSaveVideo();

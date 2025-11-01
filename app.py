@@ -346,36 +346,7 @@ def delete_playlist(playlist_id):
 
 @app.route('/api/playlist/<int:playlist_id>/filter', methods=['POST'])
 def add_playlist_filter(playlist_id):
-    @app.route('/api/playlist/<int:playlist_id>/filter/delete', methods=['POST'])
-def remove_playlist_filter(playlist_id):
-    """Removes a specific filter from a smart playlist by its ID."""
-    playlist = SmartPlaylist.query.get_or_404(playlist_id)
-    data = request.get_json()
-    filter_id_to_remove = data.get('filter_id')
-
-    if not filter_id_to_remove:
-        return jsonify({"error": "filter_id is required"}), 400
-
-    try:
-        # 1. Load existing filters
-        filters_list = json.loads(playlist.filters) if playlist.filters else []
-        
-        # 2. Create a new list *without* the matching filter
-        # We check f.get('id') to safely handle any malformed filter objects
-        new_filters_list = [f for f in filters_list if f.get('id') != filter_id_to_remove]
-        
-        # 3. Save back to the database
-        playlist.filters = json.dumps(new_filters_list)
-        db.session.commit()
-        
-        # 4. Return the updated playlist so the frontend can react
-        return jsonify(playlist.to_dict()), 200
-        
-    except json.JSONDecodeError:
-        return jsonify({"error": "Failed to decode existing playlist filters"}), 500
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"error": str(e)}), 500
+    
     """Adds a new filter object to a smart playlist."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
