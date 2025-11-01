@@ -196,7 +196,7 @@
                                 </div>
 
                                 <!-- Existing Filters Display -->
-                                <template x-if="playlist.filters && playlist.filters.length > 0">
+                                <template x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.filters && playlist.filters.length > 0">
                                     <div
                                         class="flex flex-wrap gap-1.5 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
                                         <span
