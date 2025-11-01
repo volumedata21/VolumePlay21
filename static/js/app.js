@@ -6,17 +6,18 @@ function videoApp() {
         // --- State Variables (Managed by this component) ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isScanning: false,         
+        isScanning: false,
+        isAutoplayEnabled: true, // NEW: Autoplay state (default on)
         // currentView is locally shadowed for reactive use in the component
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
-        modalVideo: null,          
+        modalVideo: null,
         searchQuery: '',
         sortOrder: 'newest',
         appData: {
-            videos: [],            
+            videos: [],
             folder_tree: {},
-            smartPlaylists: [] 
+            smartPlaylists: []
         },
         videosToShow: 75,
         filterHistory: [], // Filter history for back button
@@ -26,26 +27,26 @@ function videoApp() {
             // Initialize the currentView and openFolderPaths in the global store
             Alpine.store('globalState').currentView = this.currentView;
             // Ensure openFolderPaths exists for the global store
-            Alpine.store('globalState').openFolderPaths = []; 
-            
+            Alpine.store('globalState').openFolderPaths = [];
+
             this.fetchData();
         },
-        
+
         async fetchData() {
             try {
                 const response = await fetch('/api/data');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-                
-                this.appData.videos = data.articles || []; 
+
+                this.appData.videos = data.articles || [];
                 this.appData.folder_tree = data.folder_tree || {};
                 this.appData.smartPlaylists = data.smartPlayLists || []; // Load playlists
 
                 // CRITICAL FIX: If the view type is 'folder' but the folder tree is now empty, reset view
                 if (this.currentView.type === 'folder' && Object.keys(this.appData.folder_tree).length === 0) {
-                     this.setView('all');
+                    this.setView('all');
                 }
-                
+
                 if (!this.currentTitle || this.currentTitle === 'All Videos') {
                     this.setView('all');
                 }
@@ -67,18 +68,18 @@ function videoApp() {
                 videos = this.appData.videos;
             } else if (viewType === 'favorites') {
                 videos = this.appData.videos.filter(v => v.is_favorite);
-            } else if (viewType === 'watchLater') { 
-                videos = this.appData.videos.filter(v => v.is_read_later); 
-            } else if (viewType === 'history') { 
+            } else if (viewType === 'watchLater') {
+                videos = this.appData.videos.filter(v => v.is_read_later);
+            } else if (viewType === 'history') {
                 // Filter for videos watched for 4 seconds or more
                 videos = this.appData.videos.filter(v => v.watched_duration >= 4);
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
-            } else if (viewType === 'folder') { 
+            } else if (viewType === 'folder') {
                 const path = viewState.id;
-                videos = this.appData.videos.filter(v => 
+                videos = this.appData.videos.filter(v =>
                     // Match the folder OR any subfolder
-                    v.relative_path === path || 
+                    v.relative_path === path ||
                     (v.relative_path && v.relative_path.startsWith(path + '/'))
                 );
             }
@@ -92,11 +93,11 @@ function videoApp() {
                 } else {
                     // Start with all videos and filter them down
                     videos = this.appData.videos;
-                    
+
                     playlist.filters.forEach(filter => {
                         if (filter.type === 'title') {
                             const filterValue = String(filter.value || '');
-                            
+
                             if (filterValue.startsWith('"') && filterValue.endsWith('"')) {
                                 // Exact phrase match (case-sensitive)
                                 const searchTerm = filterValue.substring(1, filterValue.length - 1);
@@ -130,15 +131,15 @@ function videoApp() {
                 if (viewType === 'history') {
                     const dateA = a.last_watched ? new Date(a.last_watched) : 0;
                     const dateB = b.last_watched ? new Date(b.last_watched) : 0;
-                    return dateB - dateA; 
+                    return dateB - dateA;
                 }
-                
+
                 // Default sort (for all other views)
-                const dateA = a.published ? new Date(a.published) : 0; 
+                const dateA = a.published ? new Date(a.published) : 0;
                 const dateB = b.published ? new Date(b.published) : 0;
                 return this.sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
             });
-            
+
             return videos;
         },
 
@@ -150,26 +151,26 @@ function videoApp() {
             if (this.isScanning && this.appData.videos.length === 0) return 'Scanning library...';
             if (this.searchQuery.trim() !== '') return 'No videos match your search.';
             if (!this.appData.videos || this.appData.videos.length === 0) {
-                 return 'No videos found. Click the refresh icon to scan your library.';
+                return 'No videos found. Click the refresh icon to scan your library.';
             }
             const viewType = Alpine.store('globalState').currentView.type;
             const viewAuthor = Alpine.store('globalState').currentView.author;
 
             if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
             if (viewType === 'folder') return 'No videos found in this folder.';
-            if (viewType === 'history') return 'No videos in your history yet.'; 
+            if (viewType === 'history') return 'No videos in your history yet.';
             // NEW: Add message for smart playlists
             if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
-            return 'No videos found.'; 
+            return 'No videos found.';
         },
-        
+
         // --- Dynamic Tag Filtering Logic ---
-        
+
         get currentFilterPath() {
             const viewState = Alpine.store('globalState').currentView;
             // Return null or empty string if not filtered by folder or if searching
-            if (viewState.type !== 'folder' || this.searchQuery.trim() !== '') return null; 
+            if (viewState.type !== 'folder' || this.searchQuery.trim() !== '') return null;
             // Ensure no trailing slash for easier path logic comparison
             return viewState.id.endsWith('/') ? viewState.id.slice(0, -1) : viewState.id;
         },
@@ -182,7 +183,7 @@ function videoApp() {
 
             const videos = this.fullFilteredList;
             if (videos.length === 0) return [];
-            
+
             // Determine the base path for filtering
             const currentPath = viewType === 'folder' ? this.currentFilterPath : '';
             const pathPrefix = currentPath ? currentPath + '/' : '';
@@ -193,17 +194,17 @@ function videoApp() {
             // 1. Identify all unique next segments from the remaining videos
             videos.forEach(v => {
                 const path = v.relative_path || '';
-                
+
                 if (path.startsWith(pathPrefix)) {
                     let remainingPath = path.substring(pathPrefix.length);
                     const nextSegment = remainingPath.split('/')[0];
-                    
+
                     if (nextSegment && nextSegment !== currentPath) {
                         segments.set(nextSegment, (segments.get(nextSegment) || 0) + 1);
                     }
                 }
             });
-            
+
             const validTags = new Set();
             const potentialTags = Array.from(segments.keys());
 
@@ -212,10 +213,10 @@ function videoApp() {
                 const nextPath = pathPrefix + tag;
 
                 // Find all videos that would be shown if this tag were clicked
-                const videosUnderNextPath = this.appData.videos.filter(v => 
+                const videosUnderNextPath = this.appData.videos.filter(v =>
                     (v.relative_path || '').startsWith(nextPath)
                 );
-                
+
                 // Optimization: If filtering by this tag results in 0 or 1 video, skip complex check.
                 if (videosUnderNextPath.length <= 1) {
                     validTags.add(tag);
@@ -224,16 +225,16 @@ function videoApp() {
 
                 // Check for clutter: Does this tag lead to a view where every resulting video is in its own unique, immediate subfolder?
                 let uniqueImmediateSubFolders = new Set();
-                
+
                 videosUnderNextPath.forEach(v => {
                     let pathRemainder = v.relative_path.substring(nextPath.length);
                     if (pathRemainder.startsWith('/')) {
                         pathRemainder = pathRemainder.substring(1); // Remove leading '/'
                     }
-                    
+
                     // Get the next level segment (e.g., 'S1' from 'S1/vid1.mp4')
                     const nextSubFolder = pathRemainder.split('/')[0];
-                    
+
                     if (nextSubFolder) {
                         uniqueImmediateSubFolders.add(nextSubFolder);
                     }
@@ -245,18 +246,18 @@ function videoApp() {
                 if (videosUnderNextPath.length > 1 && uniqueImmediateSubFolders.size === videosUnderNextPath.length) {
                     return; // Skip this tag: Clutter detected.
                 }
-                
+
                 validTags.add(tag);
             });
-            
+
             // 3. Final single-tag check: If only one tag remains, and it results in 1 video, don't show it.
             if (validTags.size === 1) {
                 const singleTag = Array.from(validTags)[0];
                 const nextPath = pathPrefix + singleTag;
                 const videosUnderNextPath = this.appData.videos.filter(v => (v.relative_path || '').startsWith(nextPath));
-                
+
                 if (videosUnderNextPath.length <= 1) {
-                    return []; 
+                    return [];
                 }
             }
 
@@ -268,16 +269,16 @@ function videoApp() {
                 this.setView('all');
                 return;
             }
-            
+
             const currentPath = this.currentFilterPath;
             // The path must be constructed without the leading slash if starting at root
             const newPath = currentPath ? currentPath + '/' + tag : tag;
-            
+
             // Close the modal if open, then change the view
-            if (this.isModalOpen) this.closeModal(); 
+            if (this.isModalOpen) this.closeModal();
             this.setView('folder', newPath, null);
         },
-        
+
         // --- Smart Playlist Actions ---
         async createPlaylist(playlistName) {
             if (!playlistName || playlistName.trim() === '') return;
@@ -290,7 +291,7 @@ function videoApp() {
                     body: JSON.stringify({ name: playlistName.trim() })
                 });
                 const newPlaylist = await response.json();
-                
+
                 if (response.ok) {
                     // Prepend the new playlist to the list for immediate display
                     this.appData.smartPlaylists.unshift(newPlaylist);
@@ -347,7 +348,7 @@ function videoApp() {
         removeTagFromPlaylist(playlistId, tag) {
             console.log(`Placeholder: Removing tag '${tag}' from playlist ${playlistId}`);
         },
-        
+
         // NEW: Placeholder function for deleting a filter from a playlist
         removeFilterFromPlaylist(playlistId, filterId) {
             if (confirm('Are you sure you want to remove this filter?')) {
@@ -358,7 +359,7 @@ function videoApp() {
 
         // Function to apply filter criteria (called by filterEditor)
         // FIXED: Added missing function definition wrapper
-        async saveFilterToPlaylist(playlistId, filter) { 
+        async saveFilterToPlaylist(playlistId, filter) {
             try {
                 const response = await fetch(`/api/playlist/${playlistId}/filter`, {
                     method: 'POST',
@@ -450,9 +451,9 @@ function videoApp() {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
                 this.currentTitle = `Folder: ${pathSegments.pop() || 'Root'}`;
             }
-            else if (type === 'smart_playlist') { 
-                 const playlist = this.appData.smartPlaylists.find(p => p.id === id);
-                 this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
+            else if (type === 'smart_playlist') {
+                const playlist = this.appData.smartPlaylists.find(p => p.id === id);
+                this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
             }
             else { this.currentTitle = 'All Videos'; }
         },
@@ -475,22 +476,70 @@ function videoApp() {
                 }
             });
         },
-
-        closeModal() {
-            // CRITICAL: Stop video playback and save progress
+        
+        // START: AUTOPLAY REFACTOR
+        stopAndSaveVideo() {
+            // Helper function to stop playback and save progress
             if (this.modalVideo && this.$refs.videoPlayer) {
                 const videoElement = this.$refs.videoPlayer;
                 const durationWatched = videoElement.currentTime;
 
                 videoElement.pause();
-                videoElement.src = '';
+                videoElement.src = ''; // Detach src
 
                 this.updateVideoProgress(this.modalVideo, durationWatched);
             }
+        },
+
+        closeModal() {
+            // CRITICAL: Stop video playback and save progress
+            this.stopAndSaveVideo();
 
             this.isModalOpen = false;
             this.modalVideo = null;
         },
+        
+        handleVideoEnd() {
+            // 1. Save progress of the video that just finished
+            this.stopAndSaveVideo();
+
+            // 2. Check if autoplay is on
+            if (this.isAutoplayEnabled) {
+                // 3. Find the next video in the *currently visible* list (filteredVideos)
+                const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
+
+                if (currentIndex !== -1 && currentIndex + 1 < this.filteredVideos.length) {
+                    // 4. If next video exists, set it as the new modalVideo
+                    // and manually restart the player
+                    const nextVideo = this.filteredVideos[currentIndex + 1];
+                    this.modalVideo = nextVideo; // This updates the modal content
+
+                    this.$nextTick(() => {
+                        if (this.$refs.videoPlayer) {
+                            const player = this.$refs.videoPlayer;
+                            player.src = this.modalVideo.video_url; // Set new source
+
+                            const lastDuration = this.modalVideo.watched_duration || 0;
+                            // Start video at last watched duration if it's more than 10 seconds in
+                            if (lastDuration > 10) {
+                                player.currentTime = lastDuration;
+                            } else {
+                                player.currentTime = 0;
+                            }
+                            player.play(); // Start the next video
+                        }
+                    });
+
+                    // We DO NOT close the modal
+                    return;
+                }
+            }
+
+            // 5. If autoplay is off, or it was the last video, close the modal.
+            this.isModalOpen = false;
+            this.modalVideo = null;
+        },
+        // END: AUTOPLAY REFACTOR
 
         // --- Content Rendering ---
 
@@ -650,11 +699,11 @@ function videoApp() {
 function filterEditor(playlistId) {
     return {
         playlistId: playlistId,
-        selectedType: 'title', 
-        
+        selectedType: 'title',
+
         // 1. RE-ADD: textValue state property for reactivity
         textValue: '',
-        
+
         typeLabels: {
             'title': 'Title Content',
         },
@@ -678,12 +727,12 @@ function filterEditor(playlistId) {
                 console.warn('Filter submission ignored: Input is empty or invalid.');
                 return;
             }
-            
+
             // 4. UPDATED: Get the value from the reactive property
             const filterValue = this.textValue.trim();
 
             let filter = {
-                id: `${Date.now()}-${this.selectedType}`, 
+                id: `${Date.now()}-${this.selectedType}`,
                 type: this.selectedType,
                 label: this.typeLabels[this.selectedType],
                 value: filterValue // Use the value from the reactive property
@@ -691,11 +740,11 @@ function filterEditor(playlistId) {
 
             // 5. UPDATED: Use $dispatch to send an event up to videoApp
             // This replaces the brittle document.querySelector
-            this.$dispatch('save-filter', { 
-                playlistId: this.playlistId, 
-                filter: filter 
+            this.$dispatch('save-filter', {
+                playlistId: this.playlistId,
+                filter: filter
             });
-            
+
             // Close the editor UI by manipulating the isEditingFilters state on the parent element's context
             this.$root.parentElement.__x.$data.isEditingFilters = false;
         }
