@@ -125,7 +125,121 @@ function videoApp() {
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.'; 
         },
+        
+        // --- Dynamic Tag Filtering Logic ---
+        
+        get currentFilterPath() {
+            const viewState = Alpine.store('globalState').currentView;
+            // Return null or empty string if not filtered by folder or if searching
+            if (viewState.type !== 'folder' || this.searchQuery.trim() !== '') return null; 
+            // Ensure no trailing slash for easier path logic comparison
+            return viewState.id.endsWith('/') ? viewState.id.slice(0, -1) : viewState.id;
+        },
 
+        get getDynamicTags() {
+            // Only show tags when viewing 'all' or filtering by 'folder' without a search query
+            const viewType = Alpine.store('globalState').currentView.type;
+            if (viewType !== 'all' && viewType !== 'folder') return [];
+            if (this.searchQuery.trim() !== '') return [];
+
+            const videos = this.fullFilteredList;
+            if (videos.length === 0) return [];
+            
+            // Determine the base path for filtering
+            const currentPath = viewType === 'folder' ? this.currentFilterPath : '';
+            const pathPrefix = currentPath ? currentPath + '/' : '';
+
+            // Map to store unique next segments (tags)
+            const segments = new Map();
+
+            // 1. Identify all unique next segments from the remaining videos
+            videos.forEach(v => {
+                const path = v.relative_path || '';
+                
+                if (path.startsWith(pathPrefix)) {
+                    let remainingPath = path.substring(pathPrefix.length);
+                    const nextSegment = remainingPath.split('/')[0];
+                    
+                    if (nextSegment && nextSegment !== currentPath) {
+                        segments.set(nextSegment, (segments.get(nextSegment) || 0) + 1);
+                    }
+                }
+            });
+            
+            const validTags = new Set();
+            const potentialTags = Array.from(segments.keys());
+
+            // 2. Apply stopping condition: Avoid tags that result in clutter (single-video terminal folders)
+            potentialTags.forEach(tag => {
+                const nextPath = pathPrefix + tag;
+
+                // Find all videos that would be shown if this tag were clicked
+                const videosUnderNextPath = this.appData.videos.filter(v => 
+                    (v.relative_path || '').startsWith(nextPath)
+                );
+                
+                // Optimization: If filtering by this tag results in 0 or 1 video, skip complex check.
+                if (videosUnderNextPath.length <= 1) {
+                    validTags.add(tag);
+                    return;
+                }
+
+                // Check for clutter: Does this tag lead to a view where every resulting video is in its own unique, immediate subfolder?
+                let uniqueImmediateSubFolders = new Set();
+                
+                videosUnderNextPath.forEach(v => {
+                    let pathRemainder = v.relative_path.substring(nextPath.length);
+                    if (pathRemainder.startsWith('/')) {
+                        pathRemainder = pathRemainder.substring(1); // Remove leading '/'
+                    }
+                    
+                    // Get the next level segment (e.g., 'S1' from 'S1/vid1.mp4')
+                    const nextSubFolder = pathRemainder.split('/')[0];
+                    
+                    if (nextSubFolder) {
+                        uniqueImmediateSubFolders.add(nextSubFolder);
+                    }
+                });
+
+                // If the number of videos is equal to the number of unique next-level folders,
+                // and there's more than one video, it means all videos are separated one level down
+                // into unique folders (clutter). We skip this tag.
+                if (videosUnderNextPath.length > 1 && uniqueImmediateSubFolders.size === videosUnderNextPath.length) {
+                    return; // Skip this tag: Clutter detected.
+                }
+                
+                validTags.add(tag);
+            });
+            
+            // 3. Final single-tag check: If only one tag remains, and it results in 1 video, don't show it.
+            if (validTags.size === 1) {
+                const singleTag = Array.from(validTags)[0];
+                const nextPath = pathPrefix + singleTag;
+                const videosUnderNextPath = this.appData.videos.filter(v => (v.relative_path || '').startsWith(nextPath));
+                
+                if (videosUnderNextPath.length <= 1) {
+                    return []; 
+                }
+            }
+
+            return Array.from(validTags).sort();
+        },
+
+        filterByFolderTag(tag) {
+            if (tag === 'clear_all') {
+                this.setView('all');
+                return;
+            }
+            
+            const currentPath = this.currentFilterPath;
+            // The path must be constructed without the leading slash if starting at root
+            const newPath = currentPath ? currentPath + '/' + tag : tag;
+            
+            // Close the modal if open, then change the view
+            if (this.isModalOpen) this.closeModal(); 
+            this.setView('folder', newPath, null);
+        },
+        
         // --- UI Actions ---
         setView(type, id = null, author = null) {
             // Write to the global state (FolderTree uses this)
@@ -147,7 +261,10 @@ function videoApp() {
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
-            else if (type === 'folder') { this.currentTitle = `Folder: ${id.split('/').pop() || '...'}`; }
+            else if (type === 'folder') { 
+                const pathSegments = id ? id.split('/').filter(Boolean) : [];
+                this.currentTitle = `Folder: ${pathSegments.pop() || 'Root'}`; 
+            }
             else { this.currentTitle = 'All Videos'; }
         },
 
@@ -338,7 +455,7 @@ function videoApp() {
 }
 
 /**
- * Alpine.js component for the recursive folder tree.
+ * Alpine.js component for the recursive folder tree (now unused but required for folderTree template).
  * It interacts with the global Alpine Store for state.
  */
 function folderTree(tree, basePath = '') {
@@ -371,11 +488,6 @@ function folderTree(tree, basePath = '') {
             if (keys.length === 0) return false;
             
             // Check if ANY child node has content (i.e., is a folder)
-            // If the key looks like your specific video parent folder name (e.g., s2025e102699), 
-            // it's the end of the line, but we must return true if there are deeper levels
-            
-            // Simplified check: If any child key's value is non-empty, it's a folder.
-            // In your current data model, an empty object `{}` means the node is a video's parent folder.
             // If the object is not empty, it contains sub-folders. 
             // Since the backend gives *every* level an object, we just check if it has keys.
             return keys.length > 0;
