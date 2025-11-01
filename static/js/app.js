@@ -15,11 +15,11 @@ function videoApp() {
         sortOrder: 'newest',
         appData: {
             videos: [],            
-            folder_tree: {}      
+            folder_tree: {},
+            smartPlaylists: [] 
         },
         videosToShow: 75,
-        // NEW: History Stack for filter navigation
-        filterHistory: [], 
+        filterHistory: [], // Filter history for back button
 
         // --- Init ---
         init() {
@@ -39,6 +39,7 @@ function videoApp() {
                 
                 this.appData.videos = data.articles || []; 
                 this.appData.folder_tree = data.folder_tree || {};
+                this.appData.smartPlaylists = data.smartPlayLists || []; // Load playlists
 
                 // CRITICAL FIX: If the view type is 'folder' but the folder tree is now empty, reset view
                 if (this.currentView.type === 'folder' && Object.keys(this.appData.folder_tree).length === 0) {
@@ -50,7 +51,7 @@ function videoApp() {
                 }
             } catch (e) {
                 console.error('Error fetching data:', e);
-                this.appData = { videos: [], folder_tree: {} };
+                this.appData = { videos: [], folder_tree: {}, smartPlaylists: [] };
             }
         },
 
@@ -81,6 +82,39 @@ function videoApp() {
                     (v.relative_path && v.relative_path.startsWith(path + '/'))
                 );
             }
+            // NEW: Playlist filtering
+            else if (viewType === 'smart_playlist') {
+                const playlistId = viewState.id;
+                const playlist = this.appData.smartPlaylists.find(p => p.id === playlistId);
+
+                if (!playlist) {
+                    videos = []; // Playlist not found
+                } else {
+                    // Start with all videos and filter them down
+                    videos = this.appData.videos;
+                    
+                    playlist.filters.forEach(filter => {
+                        if (filter.type === 'title') {
+                            const filterValue = String(filter.value || '');
+                            
+                            if (filterValue.startsWith('"') && filterValue.endsWith('"')) {
+                                // Exact phrase match (case-sensitive)
+                                const searchTerm = filterValue.substring(1, filterValue.length - 1);
+                                if (searchTerm) {
+                                    videos = videos.filter(v => (v.title || '').includes(searchTerm));
+                                }
+                            } else {
+                                // Flexible match (case-insensitive)
+                                const searchTerm = filterValue.toLowerCase();
+                                videos = videos.filter(v => (v.title || '').toLowerCase().includes(searchTerm));
+                            }
+                        }
+                        // In the future, other filter types (duration, etc.) would be added here
+                        // else if (filter.type === 'duration') { ... }
+                    });
+                }
+            }
+            // END NEW
 
             if (this.searchQuery.trim() !== '') {
                 const query = this.searchQuery.toLowerCase();
@@ -124,6 +158,8 @@ function videoApp() {
             if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
             if (viewType === 'folder') return 'No videos found in this folder.';
             if (viewType === 'history') return 'No videos in your history yet.'; 
+            // NEW: Add message for smart playlists
+            if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.'; 
         },
@@ -242,46 +278,150 @@ function videoApp() {
             this.setView('folder', newPath, null);
         },
         
-        // --- UI Actions ---
+        // --- Smart Playlist Actions ---
+        async createPlaylist(playlistName) {
+            if (!playlistName || playlistName.trim() === '') return;
 
-        // NEW: Function to go back one filter step
+            try {
+                // API call to backend
+                const response = await fetch('/api/playlist/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: playlistName.trim() })
+                });
+                const newPlaylist = await response.json();
+                
+                if (response.ok) {
+                    // Prepend the new playlist to the list for immediate display
+                    this.appData.smartPlaylists.unshift(newPlaylist);
+                } else {
+                    console.error('Failed to create playlist:', newPlaylist.error);
+                }
+            } catch (e) {
+                console.error('Error creating playlist:', e);
+            }
+        },
+
+        // PLACEHOLDER: We will implement renaming in a future step
+        renamePlaylist(playlist) {
+            // Note: We use a placeholder here for the UI, but will replace 'prompt' later for better UX
+            const newName = prompt(`Rename playlist '${playlist.name}':`, playlist.name);
+            if (newName && newName.trim() !== '' && newName !== playlist.name) {
+                // Implement API call for renaming here later
+                console.log(`Placeholder: Renaming playlist ${playlist.id} to ${newName}`);
+            }
+        },
+
+        // IMPLEMENTED: Delete Playlist functionality
+        async deletePlaylist(playlistId) {
+            // Use existing browser confirm() as per placeholder structure
+            if (confirm('Are you sure you want to permanently delete this playlist?')) {
+                try {
+                    const response = await fetch(`/api/playlist/${playlistId}/delete`, {
+                        method: 'POST'
+                    });
+
+                    if (response.ok) {
+                        // Remove from local state
+                        this.appData.smartPlaylists = this.appData.smartPlaylists.filter(p => p.id !== playlistId);
+                        // If the deleted playlist was the current view, reset to 'all'
+                        if (this.currentView.type === 'smart_playlist' && this.currentView.id === playlistId) {
+                            this.setView('all');
+                        }
+                    } else {
+                        const result = await response.json();
+                        console.error('Failed to delete playlist:', result.error);
+                    }
+                } catch (e) {
+                    console.error('Error deleting playlist:', e);
+                }
+            }
+        },
+
+        // PLACEHOLDER: We will implement drag and drop later
+        handlePlaylistDrop(playlistId, event) {
+            console.log(`Placeholder: Dropped on playlist ${playlistId}`);
+        },
+
+        // PLACEHOLDER: We will implement tag removal later
+        removeTagFromPlaylist(playlistId, tag) {
+            console.log(`Placeholder: Removing tag '${tag}' from playlist ${playlistId}`);
+        },
+        
+        // NEW: Placeholder function for deleting a filter from a playlist
+        removeFilterFromPlaylist(playlistId, filterId) {
+            if (confirm('Are you sure you want to remove this filter?')) {
+                // We will implement the API call to the backend in the next step
+                console.log(`Placeholder: Removing filter ${filterId} from playlist ${playlistId}`);
+            }
+        },
+
+        // Function to apply filter criteria (called by filterEditor)
+        // FIXED: Added missing function definition wrapper
+        async saveFilterToPlaylist(playlistId, filter) { 
+            try {
+                const response = await fetch(`/api/playlist/${playlistId}/filter`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filter: filter })
+                });
+                const updatedPlaylist = await response.json();
+
+                if (response.ok) {
+                    // Find and replace the old playlist object with the new one
+                    const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
+                    if (index !== -1) {
+                        // Use splice to ensure reactivity
+                        // FIXED: Corrected typo 'smartPlayF' to 'smartPlaylists'
+                        this.appData.smartPlaylists.splice(index, 1, updatedPlaylist);
+                    }
+                } else {
+                    console.error('Failed to save filter to playlist:', updatedPlaylist.error);
+                }
+            } catch (e) {
+                console.error('Error saving filter to playlist:', e);
+            }
+        },
+
+
+        // --- UI Actions ---
         goBackOneFilter() {
             if (this.filterHistory.length === 0) return;
 
             // Pop the last saved state
             const lastView = this.filterHistory.pop();
 
-            // 1. Apply the previous view state directly, bypassing the history-saving logic in setView
-            Alpine.store('globalState').currentView = { 
-                type: lastView.type, 
-                id: lastView.id, 
-                author: lastView.author 
+            // 1. Apply the previous view state directly
+            Alpine.store('globalState').currentView = {
+                type: lastView.type,
+                id: lastView.id,
+                author: lastView.author
             };
 
             // 2. Update local state and title
             this.currentView = Alpine.store('globalState').currentView;
             this.currentTitle = lastView.title; // Use the saved title
-            
+
             // 3. Reset display count
             this.videosToShow = 75;
         },
 
         setView(type, id = null, author = null) {
-            
+
             // 1. Check if the current view should be saved to history
             const currentView = Alpine.store('globalState').currentView;
-            
-            // CRITICAL: Save the previous state if we are moving from a 'folder' view to a NEW 'folder' view
+
+            // Save the previous state if we are moving from one 'folder' view to a NEW 'folder' view
             if (currentView.type === 'folder' && type === 'folder' && currentView.id !== id) {
                 // Save only the essential view state and current title
                 this.filterHistory.push({
                     type: currentView.type,
                     id: currentView.id,
                     author: currentView.author,
-                    title: this.currentTitle // Save the current user-friendly title
+                    title: this.currentTitle
                 });
             }
-            
+
             // Clear history if navigating to 'all' or another primary view type
             if (type !== 'folder') {
                 this.filterHistory = [];
@@ -289,10 +429,10 @@ function videoApp() {
 
             // Write to the global state (FolderTree uses this)
             Alpine.store('globalState').currentView = { type: type, id: id, author: author };
-            
+
             // Update local state and title (for reactivity inside this component)
-            this.currentView = Alpine.store('globalState').currentView; 
-            
+            this.currentView = Alpine.store('globalState').currentView;
+
             this.updateTitle();
             this.isMobileMenuOpen = false;
             this.videosToShow = 75; // Reset count
@@ -306,9 +446,13 @@ function videoApp() {
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
-            else if (type === 'folder') { 
+            else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
-                this.currentTitle = `Folder: ${pathSegments.pop() || 'Root'}`; 
+                this.currentTitle = `Folder: ${pathSegments.pop() || 'Root'}`;
+            }
+            else if (type === 'smart_playlist') { 
+                 const playlist = this.appData.smartPlaylists.find(p => p.id === id);
+                 this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
             }
             else { this.currentTitle = 'All Videos'; }
         },
@@ -320,7 +464,7 @@ function videoApp() {
         openModal(video) {
             this.modalVideo = video;
             this.isModalOpen = true;
-            
+
             this.$nextTick(() => {
                 if (this.$refs.videoPlayer) {
                     const lastDuration = video.watched_duration || 0;
@@ -339,23 +483,23 @@ function videoApp() {
                 const durationWatched = videoElement.currentTime;
 
                 videoElement.pause();
-                videoElement.src = ''; 
-                
+                videoElement.src = '';
+
                 this.updateVideoProgress(this.modalVideo, durationWatched);
             }
-            
+
             this.isModalOpen = false;
             this.modalVideo = null;
         },
 
         // --- Content Rendering ---
-        
+
         unescapeHTML(text) {
             if (!text) return '';
             const doc = new DOMParser().parseFromString(text, 'text/html');
             return doc.documentElement.textContent;
         },
-        
+
         formatVideoDescription(text) {
             if (!text) return 'No summary available.';
 
@@ -378,8 +522,8 @@ function videoApp() {
             if (!publishedDateISO && !uploadedDateISO) return '';
 
             const now = new Date();
-            const today = now.toDateString(); 
-            
+            const today = now.toDateString();
+
             let dateToCompare;
             const publishedDate = new Date(publishedDateISO);
 
@@ -394,7 +538,7 @@ function videoApp() {
             }
 
             const seconds = Math.round((now - dateToCompare) / 1000);
-            
+
             const intervals = {
                 year: 31536000,
                 month: 2592000,
@@ -405,7 +549,7 @@ function videoApp() {
             };
 
             if (seconds < 60) return 'just now';
-            
+
             let counter;
             for (const unit in intervals) {
                 counter = Math.floor(seconds / intervals[unit]);
@@ -413,7 +557,7 @@ function videoApp() {
                     return `${counter} ${unit}${counter !== 1 ? 's' : ''} ago`;
                 }
             }
-            return 'just now'; 
+            return 'just now';
         },
 
         toggleFolder(path) {
@@ -429,9 +573,9 @@ function videoApp() {
         },
 
         // --- Data Modification ---
-        
+
         async updateVideoProgress(video, duration) {
-            if (duration < 4) return; 
+            if (duration < 4) return;
 
             try {
                 const response = await fetch(`/api/video/${video.id}/progress`, {
@@ -450,7 +594,7 @@ function videoApp() {
                 console.error('Error saving video progress:', e);
             }
         },
-        
+
         async scanVideoLibrary(isQuiet = false) {
             if (this.isScanning) return;
             if (!isQuiet) this.isScanning = true;
@@ -460,15 +604,15 @@ function videoApp() {
                     const result = await response.json();
                     console.warn('Scan endpoint reported errors:', result.error || 'Unknown error');
                 }
-                await this.fetchData(); 
-            } catch (e) { 
-                console.error('Error scanning library:', e); 
+                await this.fetchData();
+            } catch (e) {
+                console.error('Error scanning library:', e);
             }
-            finally { 
-                if (!isQuiet) this.isScanning = false; 
+            finally {
+                if (!isQuiet) this.isScanning = false;
             }
         },
-        
+
         async toggleFavorite(video) {
             const originalState = video.is_favorite;
             video.is_favorite = !video.is_favorite;
@@ -477,12 +621,12 @@ function videoApp() {
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error);
                 video.is_favorite = result.is_favorite;
-            } catch (e) { 
-                video.is_favorite = originalState; 
-                console.error('Favorite toggle failed:', e); 
+            } catch (e) {
+                video.is_favorite = originalState;
+                console.error('Favorite toggle failed:', e);
             }
         },
-        
+
         async toggleBookmark(video) {
             const originalState = video.is_read_later;
             video.is_read_later = !video.is_read_later;
@@ -491,11 +635,70 @@ function videoApp() {
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error);
                 video.is_read_later = result.is_read_later;
-            } catch(e) { 
-                video.is_read_later = originalState; 
-                console.error('Bookmark toggle failed:', e); 
+            } catch (e) {
+                video.is_read_later = originalState;
+                console.error('Bookmark toggle failed:', e);
             }
         },
+    };
+}
+
+/**
+ * NEW: Alpine.js component for managing the filter selection and application.
+ * SIMPLIFIED to only handle 'title' content.
+ */
+function filterEditor(playlistId) {
+    return {
+        playlistId: playlistId,
+        selectedType: 'title', 
+        
+        // 1. RE-ADD: textValue state property for reactivity
+        textValue: '',
+        
+        typeLabels: {
+            'title': 'Title Content',
+        },
+
+        resetValues() {
+            // 2. UPDATED: Reset the reactive property
+            this.textValue = '';
+        },
+
+        isFilterValid() {
+            // 3. UPDATED: Read from the reactive property
+            // This ensures the :disabled binding re-evaluates on every keystroke
+            if (this.selectedType === 'title') {
+                return typeof this.textValue === 'string' && this.textValue.trim().length > 0;
+            }
+            return false;
+        },
+
+        applyFilter() {
+            if (!this.isFilterValid()) {
+                console.warn('Filter submission ignored: Input is empty or invalid.');
+                return;
+            }
+            
+            // 4. UPDATED: Get the value from the reactive property
+            const filterValue = this.textValue.trim();
+
+            let filter = {
+                id: `${Date.now()}-${this.selectedType}`, 
+                type: this.selectedType,
+                label: this.typeLabels[this.selectedType],
+                value: filterValue // Use the value from the reactive property
+            };
+
+            // 5. UPDATED: Use $dispatch to send an event up to videoApp
+            // This replaces the brittle document.querySelector
+            this.$dispatch('save-filter', { 
+                playlistId: this.playlistId, 
+                filter: filter 
+            });
+            
+            // Close the editor UI by manipulating the isEditingFilters state on the parent element's context
+            this.$root.parentElement.__x.$data.isEditingFilters = false;
+        }
     };
 }
 
@@ -507,23 +710,23 @@ function folderTree(tree, basePath = '') {
     return {
         tree: tree,
         basePath: basePath,
-        
+
         // State is read directly from the global store
         isOpen(path) { return Alpine.store('globalState').openFolderPaths.includes(path); },
-        isCurrentView(path) { 
+        isCurrentView(path) {
             const current = Alpine.store('globalState').currentView;
-            return current.type === 'folder' && current.id === path; 
+            return current.type === 'folder' && current.id === path;
         },
-        
+
         // Actions must delegate to the main videoApp functions by grabbing its instance
         // $root.parentElement.__x.$data refers to the videoApp instance
-        toggle(path) { 
-            this.$root.parentElement.__x.$data.toggleFolder(path); 
+        toggle(path) {
+            this.$root.parentElement.__x.$data.toggleFolder(path);
         },
-        setView(type, path) { 
-            this.$root.parentElement.__x.$data.setView(type, path, null); 
+        setView(type, path) {
+            this.$root.parentElement.__x.$data.setView(type, path, null);
         },
-        
+
         fullPath(name) { return this.basePath + name; },
         // CRITICAL FIX: Only consider a node as having children if the children object 
         // contains keys that are NOT just video ID parents (which are 4th level deep in your data)
@@ -531,16 +734,16 @@ function folderTree(tree, basePath = '') {
             if (!children) return false;
             const keys = Object.keys(children);
             if (keys.length === 0) return false;
-            
+
             // Check if ANY child node has content (i.e., is a folder)
             // If the object is not empty, it contains sub-folders. 
             // Since the backend gives *every* level an object, we just check if it has keys.
             return keys.length > 0;
         },
-        
-        sortedEntries(obj) { 
+
+        sortedEntries(obj) {
             if (!obj) return [];
-            return Object.entries(obj).sort((a, b) => a[0].localeCompare(b[0])); 
+            return Object.entries(obj).sort((a, b) => a[0].localeCompare(b[0]));
         }
     }
 }
@@ -550,7 +753,8 @@ document.addEventListener('alpine:init', () => {
     // Define the components
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);
-    
+    Alpine.data('filterEditor', filterEditor); // NEW: Register filterEditor
+
     // Create a central, reactive store for state shared between videoApp and folderTree
     Alpine.store('globalState', {
         openFolderPaths: [],

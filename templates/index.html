@@ -28,7 +28,8 @@
 </head>
 
 <body class="bg-[var(--bg-darkest)] text-[var(--text-main)]" x-data="videoApp" x-init="init()"
-    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen }">
+    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen }"
+    @save-filter.window="saveFilterToPlaylist($event.detail.playlistId, $event.detail.filter)">
     <div x-show="isMobileMenuOpen" @click="isMobileMenuOpen = false"
         x-transition:enter="transition-opacity ease-in-out duration-300" x-transition:enter-start="opacity-0"
         x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in-out duration-300"
@@ -78,23 +79,39 @@
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
                 <!-- NEW: Smart Playlists (Drag Targets) -->
-                <div class="pt-2" x-cloak>
-                    <div class="flex items-center justify-between px-3">
+                <!-- NEW: Smart Playlists (Integrated Creation & Hover Actions) -->
+                <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
+                    <div class="flex items-center justify-between px-3 mb-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
-                        <button @click="createPlaylist()"
-                            class="p-1 -my-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+                    </div>
+
+                    <!-- Playlist Creation Input -->
+                    <div class="flex items-center gap-1 px-3 mb-2">
+                        <input type="text" x-model="newPlaylistName"
+                            @keydown.enter="createPlaylist(newPlaylistName); newPlaylistName=''"
+                            placeholder="Enter playlist name..."
+                            class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
+
+                        <button @click="createPlaylist(newPlaylistName); newPlaylistName=''"
+                            :disabled="newPlaylistName.trim() === ''"
+                            class="p-1 text-[var(--text-secondary)] transition-colors"
+                            :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
                             title="Create New Playlist">
-                            <i class="material-icons" style="font-size: 18px;">add</i>
+                            <i class="material-icons" style="font-size: 20px;">add</i>
                         </button>
                     </div>
 
+                    <!-- Playlist List -->
                     <div class="mt-1 space-y-1">
                         <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
-                            <div class="relative group" @dragover.prevent
-                                @drop="handlePlaylistDrop(playlist.id, $event)">
+                            <!-- Playlist Item Container -->
+                            <div x-data="{ showActions: false, hoverTimer: null, isEditingFilters: false }"
+                                @mouseenter="clearTimeout(hoverTimer); hoverTimer = setTimeout(() => { showActions = true }, 1000)"
+                                @mouseleave="clearTimeout(hoverTimer); showActions = false; isEditingFilters = false"
+                                class="relative" @dragover.prevent @drop="handlePlaylistDrop(playlist.id, $event)">
 
                                 <a href="#" @click.prevent="setView('smart_playlist', playlist.id)"
-                                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
+                                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50 relative"
                                     :class="currentView.type === 'smart_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
 
                                     <i class="material-icons" style="font-size:20px;">playlist_play</i>
@@ -102,41 +119,120 @@
                                     <!-- Playlist Name -->
                                     <span class="truncate flex-1" x-text="playlist.name"></span>
 
-                                    <!-- Tag Count -->
-                                    <span class="text-xs text-[var(--text-secondary)]/70"
-                                        x-text="playlist.tags.length > 0 ? playlist.tags.length : ''"></span>
+                                    <!-- Tag Count (Hidden when actions show to prevent jump) -->
+                                    <span
+                                        class="text-xs text-[var(--text-secondary)]/70 transition-opacity duration-300"
+                                        :class="{ 'opacity-0': showActions, 'invisible': showActions }"
+                                        x-show="playlist.tags.length > 0 && !showActions">
+                                        <span x-text="playlist.tags.length"></span>
+                                    </span>
 
-                                    <!-- Actions Menu (Edit/Delete) -->
-                                    <div class="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button @click.stop.prevent="$refs.menu.classList.toggle('hidden')"
-                                            class="p-1 -m-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)]">
-                                            <i class="material-icons" style="font-size: 18px;">more_vert</i>
+                                    <!-- Actions: Absolute Positioning, Fade In -->
+                                    <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 transition-opacity duration-300 pointer-events-none"
+                                        :class="showActions ? 'opacity-100 pointer-events-auto' : 'opacity-0'">
+
+                                        <!-- NEW: Add Filter Button -->
+                                        <button @click.stop.prevent="isEditingFilters = true; showActions = false"
+                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
+                                            title="Add Filter Criteria" :tabindex="showActions ? 0 : -1">
+                                            <i class="material-icons" style="font-size: 18px;">filter_alt</i>
                                         </button>
 
-                                        <div x-ref="menu" @click.outside="$refs.menu.classList.add('hidden')"
-                                            class="hidden absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-[var(--bg-darkest)] ring-1 ring-black ring-opacity-5 focus:outline-none">
-                                            <div class="py-1">
-                                                <a href="#"
-                                                    @click.prevent="renamePlaylist(playlist.id, prompt('Rename playlist:', playlist.name))"
-                                                    class="flex items-center px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                    <i class="material-icons text-base mr-2">edit</i> Rename
-                                                </a>
-                                                <a href="#" @click.prevent="deletePlaylist(playlist.id)"
-                                                    class="flex items-center px-4 py-2 text-sm text-red-500 hover:bg-red-900/50">
-                                                    <i class="material-icons text-base mr-2">delete</i> Delete
-                                                </a>
-                                            </div>
-                                        </div>
+                                        <button @click.stop.prevent="renamePlaylist(playlist)"
+                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
+                                            title="Rename Playlist" :tabindex="showActions ? 0 : -1">
+                                            <i class="material-icons" style="font-size: 18px;">edit</i>
+                                        </button>
+                                        <button @click.stop.prevent="deletePlaylist(playlist.id)"
+                                            class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
+                                            title="Delete Playlist" :tabindex="showActions ? 0 : -1">
+                                            <i class="material-icons" style="font-size: 18px;">delete</i>
+                                        </button>
                                     </div>
                                 </a>
 
-                                <!-- Tags inside the Playlist View -->
+                                <!-- NEW: Filter Editor UI (SIMPLIFIED TO ONLY TITLE CONTENT) -->
+                                <div x-show="isEditingFilters" x-data="filterEditor(playlist.id)"
+                                    @click.outside="isEditingFilters = false"
+                                    x-transition:enter="transition ease-out duration-150"
+                                    x-transition:enter-start="opacity-0 translate-y-[-5px]"
+                                    x-transition:enter-end="opacity-100 translate-y-0"
+                                    x-transition:leave="transition ease-in duration-100"
+                                    x-transition:leave-start="opacity-100 translate-y-0"
+                                    x-transition:leave-end="opacity-0 translate-y-[-5px]"
+                                    class="p-3 mt-1 space-y-2 border border-[var(--highlight-ring)]/50 rounded-md bg-[var(--bg-darkest)] shadow-xl"
+                                    x-cloak>
+
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Title Filter
+                                        </h4>
+                                        <button @click.stop="isEditingFilters = false"
+                                            class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500"
+                                            title="Close">
+                                            <i class="material-icons" style="font-size: 18px;">close</i>
+                                        </button>
+                                    </div>
+
+                                    <!-- Filter Value Inputs (Now only Title Content) -->
+                                    <div class="space-y-2">
+                                        <!-- x-init is removed, x-ref is removed, x-model is ADDED -->
+                                        <div>
+                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
+                                                Search Text (Use quotes for exact phrase match)
+                                            </label>
+                                            <input type="text" x-model="textValue"
+                                                @keydown.enter.prevent="applyFilter()"
+                                                class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
+                                                placeholder="e.g. 'time' or 'space exploration'">
+                                        </div>
+
+                                        <!-- Action Button -->
+                                        <!-- The :disabled check will now call the updated isFilterValid() -->
+                                        <button @click="applyFilter()" :disabled="!isFilterValid()"
+                                            class="w-full rounded-md bg-[var(--text-highlight)] disabled:bg-opacity-50 px-3 py-1.5 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80 transition-colors">
+                                            Apply Filter
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Existing Filters Display -->
+                                <template x-if="playlist.filters && playlist.filters.length > 0">
+                                    <div
+                                        class="flex flex-wrap gap-1.5 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
+                                        <span
+                                            class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1 self-center">Filters:</span>
+
+                                        <!-- Loop over filters and display them as chips -->
+                                        <template x-for="filter in playlist.filters" :key="filter.id">
+                                            <span
+                                                class="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 px-2 py-0.5 rounded-full"
+                                                style="background-color: #233b4b;">
+
+                                                <!-- Filter Text (e.g., "Title Content: 'time'") -->
+                                                <span>
+                                                    <span class="font-semibold" x-text="filter.label + ': '"></span>
+                                                    <span class="italic"
+                                                        x-text="'&quot;' + filter.value + '&quot;'"></span>
+                                                </span>
+
+                                                <!-- Delete Filter Button (calls a new function) -->
+                                                <button
+                                                    @click.prevent="removeFilterFromPlaylist(playlist.id, filter.id)"
+                                                    class="p-0.5 -m-0.5 text-cyan-400 hover:text-red-500 rounded-full transition-colors">
+                                                    <i class="material-icons" style="font-size: 14px;">close</i>
+                                                </button>
+                                            </span>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- Existing Tags Display (Kept for now, will be consolidated with Filters later) -->
                                 <template
                                     x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.tags.length > 0">
                                     <div
                                         class="flex flex-wrap gap-1 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
                                         <span
-                                            class="text-xs font-semibold text-[var(--text-secondary)] mr-1">Tags:</span>
+                                            class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1">Tags:</span>
                                         <template x-for="tag in playlist.tags" :key="tag">
                                             <a href="#" @click.prevent="removeTagFromPlaylist(playlist.id, tag)"
                                                 class="inline-block text-xs font-medium text-white px-1.5 py-0.5 rounded-full cursor-pointer transition-colors duration-150 group-hover:bg-red-500/50"
@@ -146,12 +242,10 @@
                                         </template>
                                     </div>
                                 </template>
-
                             </div>
                         </template>
                         <p x-show="appData.smartPlaylists.length === 0"
-                            class="px-3 text-xs italic text-[var(--text-secondary)]">No playlists created. Click '+' to
-                            start.</p>
+                            class="px-3 text-xs italic text-[var(--text-secondary)]">Start by entering a name above.</p>
                     </div>
                 </div>
 

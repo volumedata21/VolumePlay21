@@ -2,6 +2,7 @@
 import os
 import datetime
 import xml.etree.ElementTree as ET # For parsing NFO files
+import json # For handling playlist filters
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
@@ -95,6 +96,24 @@ class Video(db.Model):
             # NEW: Include history fields in the dictionary
             'last_watched': self.last_watched.isoformat() if self.last_watched else None,
             'watched_duration': self.watched_duration
+        }
+
+# SmartPlaylist Model
+class SmartPlaylist(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False)
+    # Tags added via drag-and-drop (stored as JSON array of strings)
+    tags = db.Column(db.Text, default='[]') 
+    # Filters for smart criteria (stored as JSON array of objects)
+    filters = db.Column(db.Text, default='[]') 
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            # Deserialize tags/filters for frontend use
+            'tags': json.loads(self.tags) if self.tags else [],
+            'filters': json.loads(self.filters) if self.filters else [], 
         }
 
 ## --- Helper Functions ---
@@ -276,17 +295,15 @@ def home():
 
 @app.route('/api/data')
 def get_data():
-    """Returns all video data and the folder tree as a JSON object."""
+    """Returns all video data, the folder tree, and smart playlists as a JSON object."""
     videos = Video.query.order_by(Video.last_watched.desc(), Video.aired.desc()).all()
+    playlists = SmartPlaylist.query.order_by(SmartPlaylist.id.asc()).all()
     
     video_dtos = [v.to_dict() for v in videos]
+    playlist_dtos = [p.to_dict() for p in playlists]
     
     relative_paths = set(v['relative_path'] for v in video_dtos if v['relative_path'] != '.')
     folder_tree = build_folder_tree(relative_paths)
-    
-    # DEBUG: Show the paths being used to build the tree
-    print(f"DEBUG: Relative paths used for tree: {relative_paths}")
-    print(f"DEBUG: Built folder tree: {folder_tree}")
     
     return jsonify({
         'categories': [], 
@@ -296,8 +313,66 @@ def get_data():
         'removedStreams': [],
         'customStreamFeedLinks': [],
         'articles': video_dtos, 
-        'folder_tree': folder_tree
+        'folder_tree': folder_tree,
+        'smartPlayLists': playlist_dtos
     })
+
+## --- API: Playlist Management ---
+
+@app.route('/api/playlist/create', methods=['POST'])
+def create_playlist():
+    """Creates a new smart playlist."""
+    data = request.get_json()
+    name = data.get('name')
+    if not name:
+        return jsonify({"error": "Playlist name is required"}), 400
+    
+    new_playlist = SmartPlaylist(name=name.strip())
+    db.session.add(new_playlist)
+    db.session.commit()
+    
+    return jsonify(new_playlist.to_dict()), 201
+
+# IMPLEMENTED: Delete Playlist
+@app.route('/api/playlist/<int:playlist_id>/delete', methods=['POST'])
+def delete_playlist(playlist_id):
+    """Deletes a smart playlist by ID."""
+    playlist = SmartPlaylist.query.get_or_404(playlist_id)
+    
+    db.session.delete(playlist)
+    db.session.commit()
+    
+    return jsonify({'success': True}), 200
+
+@app.route('/api/playlist/<int:playlist_id>/filter', methods=['POST'])
+def add_playlist_filter(playlist_id):
+    """Adds a new filter object to a smart playlist."""
+    playlist = SmartPlaylist.query.get_or_404(playlist_id)
+    data = request.get_json()
+    new_filter = data.get('filter')
+    
+    if not new_filter or not isinstance(new_filter, dict):
+        return jsonify({"error": "Valid filter object required"}), 400
+    
+    try:
+        # 1. Load existing filters from JSON (ensure safe defaults)
+        filters_list = json.loads(playlist.filters) if playlist.filters else []
+        
+        # 2. Append the new filter
+        filters_list.append(new_filter)
+        
+        # 3. Save back to the database as JSON string
+        playlist.filters = json.dumps(filters_list)
+        db.session.commit()
+        
+        return jsonify(playlist.to_dict()), 200
+        
+    except json.JSONDecodeError:
+        return jsonify({"error": "Failed to decode existing playlist filters"}), 500
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
 
 ## --- API: Video/Thumbnail Serving ---
 
