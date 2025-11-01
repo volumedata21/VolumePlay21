@@ -13,7 +13,7 @@ basedir = os.path.abspath(os.path.dirname(__file__))
 data_dir = os.environ.get('DATA_DIR', basedir)
 db_path = os.path.join(data_dir, "app.db")
 
-# VIDEO_DIR will be our new env var for the video library
+# VIDEO_DIR will be our new env var for the video library (e.g., /videos)
 video_dir_env = os.environ.get('VIDEO_DIR', os.path.join(basedir, "videos")) 
 # Normalize the video_dir path for consistent relative path calculation
 video_dir = os.path.normpath(video_dir_env)
@@ -55,22 +55,18 @@ class Video(db.Model):
         """
         # Calculate relative path for folder view
         try:
-            # Ensure video_path is a string
             if not isinstance(self.video_path, str):
                 self.video_path = str(self.video_path)
             
-            # Use os.path.normpath to ensure paths are clean
             norm_video_path = os.path.normpath(self.video_path)
-            norm_base_dir = os.path.normpath(video_dir)
+            norm_base_dir = os.path.normpath(video_dir) # Use the derived base path
             
             relative_dir = os.path.relpath(os.path.dirname(norm_video_path), norm_base_dir)
             # Normalize to use forward slashes for consistency in JS/Python
             relative_dir = relative_dir.replace(os.sep, '/')
         except ValueError:
-            # This can happen if paths are on different drives (windows)
             relative_dir = '.' 
         except TypeError:
-            # This can happen if self.video_path is None or not a path-like object
             print(f"Error processing path for video ID {self.id}: {self.video_path}")
             relative_dir = '.'
             
@@ -111,14 +107,12 @@ def scan_videos():
     added_count = 0
     updated_count = 0
     
-    # Supported video and image extensions
     video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
     image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
 
-    # Use os.walk to go through all subdirectories
+    # CRITICAL: Start scanning from the actual video_dir root
     for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
         for filename in filenames:
-            # 1. Find a video file first
             file_ext = os.path.splitext(filename)[1].lower()
             if file_ext not in video_extensions:
                 continue
@@ -126,10 +120,8 @@ def scan_videos():
             base_filename = os.path.splitext(filename)[0]
             video_file_path = os.path.normpath(os.path.join(dirpath, filename))
             
-            # 2. Find matching NFO file (optional)
             nfo_path = os.path.normpath(os.path.join(dirpath, base_filename + '.nfo'))
             
-            # 3. Find matching Thumbnail file (optional)
             thumbnail_file_path = None
             for img_ext in image_extensions:
                 potential_thumb = os.path.normpath(os.path.join(dirpath, base_filename + img_ext))
@@ -147,7 +139,6 @@ def scan_videos():
                     if thumbnail_file_path:
                         break
 
-            # 4. Parse NFO or create default metadata
             title = None
             show_title = None
             plot = None
@@ -156,14 +147,13 @@ def scan_videos():
             youtube_id = None 
 
             if os.path.exists(nfo_path):
-                # Try to parse NFO
                 try:
                     tree = ET.parse(nfo_path)
                     root = tree.getroot()
                     title = root.findtext('title')
                     show_title = root.findtext('showtitle')
-                    plot = root.findtext('plot') # <plot> is standard for summary
-                    youtube_id = root.findtext('uniqueid') 
+                    plot = root.findtext('plot')
+                    youtube_id = root.findtext('uniqueid')
                     aired_str = root.findtext('aired')
                     
                     if aired_str:
@@ -178,33 +168,35 @@ def scan_videos():
                 except Exception as e:
                     print(f"  - Error processing {nfo_path}: {e}")
             
-            # 5. Fill in missing metadata with fallbacks
             if not title:
-                title = base_filename.replace('.', ' ') # Use filename
+                title = base_filename.replace('.', ' ')
             if not show_title:
-                show_title = os.path.basename(os.path.dirname(video_file_path))
-                if os.path.normpath(os.path.dirname(video_file_path)) == video_dir:
+                # Calculate show_title relative to the video_dir base path
+                current_dir = os.path.dirname(video_file_path)
+                relative_path_segment = os.path.relpath(current_dir, video_dir)
+                
+                if relative_path_segment == '.':
                     show_title = "Unknown Show"
+                else:
+                    # Use the last folder name as the show title
+                    show_title = os.path.basename(relative_path_segment) 
             
-            # Get file modification time as 'uploaded_date'
             try:
                 mtime = os.path.getmtime(video_file_path)
                 uploaded_date = datetime.datetime.fromtimestamp(mtime)
             except OSError:
-                pass # Fallback to None
+                pass
 
             if not aired_date:
-                aired_date = uploaded_date # Fallback: <aired> date is file mtime
+                aired_date = uploaded_date
 
             if not plot:
-                plot = "" # Default to empty string
+                plot = ""
 
-            # 6. Add or Update the database
             try:
                 existing_video = Video.query.filter_by(video_path=video_file_path).first()
                 
                 if existing_video:
-                    # Update existing entry
                     existing_video.title = title
                     existing_video.show_title = show_title
                     existing_video.summary = plot
@@ -214,7 +206,6 @@ def scan_videos():
                     existing_video.thumbnail_path = thumbnail_file_path
                     updated_count += 1
                 else:
-                    # Create new entry
                     new_video = Video(
                         title=title,
                         show_title=show_title,
@@ -232,7 +223,6 @@ def scan_videos():
                 print(f"  - DB Error processing {video_file_path}: {e}")
                 db.session.rollback()
 
-    # Commit all changes after the loop
     if added_count > 0 or updated_count > 0:
         db.session.commit()
     print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
@@ -245,16 +235,14 @@ def build_folder_tree(paths):
     """
     tree = {}
     for path in paths:
-        # We already normalized to '/' in the to_dict() function.
+        # Use forward slash for consistency with frontend JS
+        path = path.replace('\\', '/') 
         parts = path.split('/')
-        
-        # Handle the root directory case
-        if parts == ['.']:
+        if parts == ['.'] or parts == ['']:
             continue
-            
         current_level = tree
         for part in parts:
-            if part: # Avoid empty strings
+            if part: 
                 current_level = current_level.setdefault(part, {})
     return tree
 
@@ -265,15 +253,12 @@ def initialize_database():
     with app.app_context():
         print("Initializing database...")
         db.create_all()
-        
-        # Check if the database is empty
         video_count = Video.query.count()
         if video_count == 0:
             print("No videos found in database. Running initial scan...")
             scan_videos()
         else:
             print(f"Database already contains {video_count} videos.")
-            
         print("Database initialization complete.")
 
 # Run initialization logic *outside* the __name__ == '__main__' block
@@ -292,20 +277,15 @@ def home():
 @app.route('/api/data')
 def get_data():
     """Returns all video data and the folder tree as a JSON object."""
-    videos = Video.query.order_by(Video.aired.desc()).all()
+    videos = Video.query.order_by(Video.last_watched.desc(), Video.aired.desc()).all()
     
     video_dtos = [v.to_dict() for v in videos]
     
-    # We use a set to automatically get unique folder paths
     relative_paths = set(v['relative_path'] for v in video_dtos if v['relative_path'] != '.')
-    
-    # Add a debug print to see what paths are being processed
-    print(f"DEBUG: Relative paths for tree: {relative_paths}")
-    
-    # Build the nested dictionary tree
     folder_tree = build_folder_tree(relative_paths)
-
-    # Add a debug print to see what paths are being processed
+    
+    # DEBUG: Show the paths being used to build the tree
+    print(f"DEBUG: Relative paths used for tree: {relative_paths}")
     print(f"DEBUG: Built folder tree: {folder_tree}")
     
     return jsonify({
@@ -345,7 +325,7 @@ def get_thumbnail(video_id):
     return send_from_directory(thumb_dir, thumb_filename, as_attachment=False, mimetype=mimetype)
 
 
-## --- API: Video Actions ---
+## --- API: Video Actions (Favorites/Watch Later/Progress) ---
 
 @app.route('/api/article/<int:article_id>/favorite', methods=['POST'])
 def toggle_favorite(article_id):
@@ -362,8 +342,7 @@ def toggle_watch_later(article_id):
     video.is_watch_later = not video.is_watch_later
     db.session.commit()
     return jsonify({'is_read_later': video.is_watch_later})
-    
-# NEW API: Update Video Progress
+
 @app.route('/api/video/<int:video_id>/progress', methods=['POST'])
 def update_video_progress(video_id):
     """
@@ -373,8 +352,6 @@ def update_video_progress(video_id):
     video = Video.query.get_or_404(video_id)
     data = request.get_json()
     
-    # Get the duration watched from the request body
-    # Ensure it's a number and non-negative
     try:
         duration_watched = int(data.get('duration_watched', 0))
     except (TypeError, ValueError):
@@ -414,6 +391,5 @@ def scan_videos_route():
 ## --- Main Execution ---
 
 if __name__ == '__main__':
-    # This block only runs when you execute `python app.py` directly
     debug_mode = os.environ.get('FLASK_DEBUG') == '1'
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)
