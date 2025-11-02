@@ -22,6 +22,12 @@ function videoApp() {
         videosToShow: 75,
         filterHistory: [], // Filter history for back button
 
+        // --- PWA State (NEW) ---
+        offlineVideoUrls: new Set(), // Holds URLs of downloaded videos
+        downloadQueue: new Map(), // Tracks download progress
+        videoCacheName: 'video-cache-v1', // Must match sw.js
+        // --- End PWA State ---
+
         // --- Init ---
         init() {
             // Initialize the currentView and openFolderPaths in the global store
@@ -30,6 +36,11 @@ function videoApp() {
             Alpine.store('globalState').openFolderPaths = [];
 
             this.fetchData();
+
+            // --- PWA Init (NEW) ---
+            this.registerServiceWorker();
+            this.checkOfflineStatus();
+            // --- End PWA Init ---
         },
 
         async fetchData() {
@@ -334,7 +345,6 @@ function videoApp() {
             }
         },
 
-        // PLACEHOLDER: We will implement renaming in a future step
         async renamePlaylist(playlist) {
             const newName = prompt(`Rename playlist '${playlist.name}':`, playlist.name);
             
@@ -366,7 +376,6 @@ function videoApp() {
             }
         },
 
-        // IMPLEMENTED: Delete Playlist functionality
         async deletePlaylist(playlistId) {
             // Use existing browser confirm() as per placeholder structure
             if (confirm('Are you sure you want to permanently delete this playlist?')) {
@@ -429,8 +438,6 @@ function videoApp() {
             }
         },
 
-        // Function to apply filter criteria (called by filterEditor)
-        // FIXED: Added missing function definition wrapper
         async saveFilterToPlaylist(playlistId, filter) {
             try {
                 const response = await fetch(`/api/playlist/${playlistId}/filter`, {
@@ -642,7 +649,7 @@ function videoApp() {
 
             let formattedText = cleanText
                 .replace(urlRegex, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-                .replace(atRegex, (match, username) => `<a href="https://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
+                .replace(atRegex, (match, username) => `<a href="https.://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(hashRegex, (match, tag) => `<a href="https://www.youtube.com/hashtag/${tag}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(/\n/g, '<br>');
 
@@ -702,6 +709,111 @@ function videoApp() {
                 Alpine.store('globalState').openFolderPaths.splice(index, 1);
             }
         },
+
+        // --- PWA Offline Functions (NEW) ---
+
+        registerServiceWorker() {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered.', reg))
+                    .catch(err => console.log('Service Worker registration failed:', err));
+            }
+        },
+
+        async checkOfflineStatus() {
+            if (!('caches' in window)) return;
+            try {
+                const cache = await caches.open(this.videoCacheName);
+                const keys = await cache.keys();
+                const urls = keys.map(req => req.url);
+                this.offlineVideoUrls = new Set(urls);
+                console.log('Offline videos checked:', this.offlineVideoUrls);
+            } catch (e) {
+                console.error('Error checking offline status:', e);
+            }
+        },
+
+        isOffline(videoUrl) {
+            return this.offlineVideoUrls.has(videoUrl);
+        },
+
+        getOfflineIcon(videoUrl) {
+            if (this.downloadQueue.has(videoUrl)) {
+                return 'downloading'; // Show spinning icon
+            }
+            return this.isOffline(videoUrl) ? 'download_done' : 'download';
+        },
+
+        async handleOfflineClick(video, event) {
+            const videoUrl = video.video_url;
+            if (this.isOffline(videoUrl)) {
+                // Already offline, so delete it
+                this.deleteOfflineVideo(video);
+            } else if (!this.downloadQueue.has(videoUrl)) {
+                // Not offline and not downloading, so start download
+                this.downloadVideo(video, event);
+            }
+        },
+
+        async downloadVideo(video, event) {
+            if (!('caches' in window)) {
+                alert('Offline storage is not supported by your browser.');
+                return;
+            }
+            
+            const videoUrl = video.video_url;
+            const imageUrl = video.image_url;
+
+            this.downloadQueue.set(videoUrl, true); // Add to queue
+            
+            try {
+                const cache = await caches.open(this.videoCacheName);
+                console.log(`[App] Caching video: ${video.title}`);
+                
+                // Fetch and cache the video and its image
+                await cache.add(videoUrl);
+                if (imageUrl) {
+                    await cache.add(imageUrl);
+                }
+
+                // Success! Add to our Set for instant UI update
+                this.offlineVideoUrls.add(videoUrl);
+                console.log(`[App] Successfully cached: ${video.title}`);
+
+            } catch (e) {
+                console.error('Failed to download video:', e);
+                alert(`Failed to save "${video.title}" for offline. It may be too large or the network failed.`);
+                // If it failed, remove from cache just in case
+                this.deleteOfflineVideo(video);
+            } finally {
+                // Always remove from queue when done
+                this.downloadQueue.delete(videoUrl);
+            }
+        },
+
+        async deleteOfflineVideo(video) {
+            if (!('caches' in window)) return;
+            
+            const videoUrl = video.video_url;
+            const imageUrl = video.image_url;
+
+            try {
+                const cache = await caches.open(this.videoCacheName);
+                await cache.delete(videoUrl);
+                if (imageUrl) {
+                    await cache.delete(imageUrl);
+                }
+                
+                // Update UI
+                this.offlineVideoUrls.delete(videoUrl);
+                console.log(`[App] Removed from offline: ${video.title}`);
+
+            } catch (e) {
+                console.error('Failed to delete video from cache:', e);
+            }
+        },
+        
+        // --- End PWA Offline Functions ---
 
         // --- Data Modification ---
 
@@ -787,7 +899,7 @@ function filterEditor(playlistId, appData) {
         // allAuthors: [],     // <-- REMOVED
         typeLabels: {
             'title': 'Title Content',
-            'author': 'Author'
+            'author': 'Author / Channel' // <-- CORRECTED THIS LABEL
         },
 
         // --- REMOVED THE init() FUNCTION ---

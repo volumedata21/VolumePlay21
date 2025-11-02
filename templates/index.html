@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-
+    <link rel="manifest" href="/manifest.json">
     <link rel="shortcut icon" href="/static/favicon/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon/favicon.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png">
@@ -427,6 +427,16 @@
                                     :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
                                         class="material-icons" style="font-size: 20px;"
                                         x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
+                                
+                                <!-- ADD THIS NEW BUTTON -->
+                                <button class="p-1" 
+                                    @click.prevent="handleOfflineClick(video, $event)"
+                                    :class="isOffline(video.video_url) ? 'text-green-400' : 'text-[var(--text-secondary)] hover:text-green-400'"
+                                    :title="isOffline(video.video_url) ? 'Remove from offline' : 'Save for offline'">
+                                    
+                                    <i class="material-icons" style="font-size: 20px;"
+                                        x-text="getOfflineIcon(video.video_url)"></i>
+                                </button>
                             </div>
                         </div>
                     </div>
