@@ -76,8 +76,10 @@ class Video(db.Model):
             'title': self.title,
             'summary': self.summary,
             'author': self.show_title or 'Unknown Show',  # Map show_title -> author
-            # 'published' is the NFO <aired> date
+            # 'published' is the NFO <aired> date (with fallback)
             'published': self.aired.isoformat() if self.aired else (self.uploaded_date.isoformat() if self.uploaded_date else datetime.datetime.now().isoformat()),
+            # 'aired_date' is *only* the NFO <aired> date (no fallback)
+            'aired_date': self.aired.isoformat() if self.aired else None,
             # 'uploaded' is the file modification time
             'uploaded': self.uploaded_date.isoformat() if self.uploaded_date else datetime.datetime.now().isoformat(),
             'is_favorite': self.is_favorite,

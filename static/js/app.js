@@ -13,7 +13,7 @@ function videoApp() {
         currentTitle: 'All Videos',
         modalVideo: null,
         searchQuery: '',
-        sortOrder: 'newest',
+        sortOrder: 'aired_newest',
         appData: {
             videos: [],
             folder_tree: {},
@@ -138,13 +138,37 @@ function videoApp() {
                 if (viewType === 'history') {
                     const dateA = a.last_watched ? new Date(a.last_watched) : 0;
                     const dateB = b.last_watched ? new Date(b.last_watched) : 0;
-                    return dateB - dateA;
+                    return dateB - dateA; // Newest watched first
                 }
 
-                // Default sort (for all other views)
-                const dateA = a.published ? new Date(a.published) : 0;
-                const dateB = b.published ? new Date(b.published) : 0;
-                return this.sortOrder === 'newest' ? dateB - dateA : dateA - dateB;
+                let dateA, dateB;
+                const MAX_DATE = new Date(8640000000000000); // Far future
+                const MIN_DATE = new Date(0); // The_past
+
+                switch (this.sortOrder) {
+                    case 'aired_oldest':
+                        // Use max date for nulls to send them to the end
+                        dateA = a.aired_date ? new Date(a.aired_date) : MAX_DATE;
+                        dateB = b.aired_date ? new Date(b.aired_date) : MAX_DATE;
+                        return dateA - dateB; 
+                    
+                    case 'uploaded_newest':
+                        dateA = a.uploaded ? new Date(a.uploaded) : MIN_DATE;
+                        dateB = b.uploaded ? new Date(b.uploaded) : MIN_DATE;
+                        return dateB - dateA;
+
+                    case 'uploaded_oldest':
+                        dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
+                        dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
+                        return dateA - dateB; 
+
+                    case 'aired_newest': // Default case
+                    default:
+                        // Use min date for nulls to send them to the end
+                        dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
+                        dateB = b.aired_date ? new Date(b.aired_date) : MIN_DATE;
+                        return dateB - dateA; 
+                }
             });
 
             return videos;
@@ -389,10 +413,12 @@ function videoApp() {
 
                 if (response.ok) {
                     const updatedPlaylist = await response.json();
-                    // Find and replace the old playlist object with the new one to ensure reactivity
+                    // Find the local playlist object
                     const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
                     if (index !== -1) {
-                        this.appData.smartPlaylists.splice(index, 1, updatedPlaylist);
+                        // --- THIS IS THE FIX ---
+                        // Surgically update the filters array, just like in saveFilterToPlaylist
+                        this.appData.smartPlaylists[index].filters = updatedPlaylist.filters;
                     }
                 } else {
                     const result = await response.json();
@@ -774,8 +800,6 @@ function filterEditor(playlistId, appData) {
             const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
             return Array.from(authors).sort();
         },
-// ...
-
         resetValues() {
             this.textValue = '';
             this.selectedAuthors = [];

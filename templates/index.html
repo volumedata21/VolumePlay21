@@ -44,9 +44,9 @@
 
             <div class="flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] px-4">
                 <a href="#" @click.prevent="setView('all'); searchQuery=''" class="flex items-center gap-3 group">
-                    <i class="material-icons" style="font-size:28px;color:#4A55A2;">ondemand_video</i>
+                    <i class="material-icons" style="font-size:28px;color:#DD3D2D;">ondemand_video</i>
                     <span
-                        class="text-lg font-semibold text-[var(--text-bright)] group-hover:text-[var(--text-main)]">VolumePlay</span>
+                        class="text-lg font-semibold text-[var(--text-bright)] group-hover:text-[var(--text-main)]">VolumePlay21</span>
                 </a>
                 <div class="flex items-center gap-2">
                     <button type="button"
@@ -365,9 +365,11 @@
                     </div>
                     <select x-model="sortOrder"
                         class="hidden rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] sm:block">
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                    </select>
+                        <option value="aired_newest">Aired (Newest)</option>
+                        <option value="aired_oldest">Aired (Oldest)</option>
+                        <option value="uploaded_newest">Upload (Newest)</option>
+                        <option value="uploaded_oldest">Upload (Oldest)</option>
+                        </select>
                     <button class="p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
                         @click="scanVideoLibrary(false)" :disabled="isScanning">
                         <i class="material-icons" :class="{ 'animate-spin': isScanning }"
