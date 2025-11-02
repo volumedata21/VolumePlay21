@@ -11,7 +11,7 @@
     <script src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 
     <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
-    <link rel="manifest" href="/manifest.json">
+
     <link rel="shortcut icon" href="/static/favicon/favicon.ico">
     <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon/favicon.png">
     <link rel="apple-touch-icon" sizes="180x180" href="/static/favicon/apple-touch-icon.png">
@@ -74,14 +74,6 @@
                     class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
                     :class="currentView.type === 'history' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">history</i> History</a>
-                
-                <!-- (NEW) Only show "Downloaded" link if in PWA mode -->
-                <template x-if="isPwaMode">
-                    <a href="#" @click.prevent="setView('downloaded')"
-                        class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
-                        :class="currentView.type === 'downloaded' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
-                            class="material-icons" style="font-size:20px;">download_done</i> Downloaded</a>
-                </template>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
@@ -317,57 +309,42 @@
         <main class="flex-1 overflow-y-auto lg:pl-72">
             <header
                 class="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] bg-[var(--bg-darkest)]/80 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
-                
-                <!-- (NEW) Left side: Hamburger (mobile) or Title (desktop) -->
-                <div class="flex items-center gap-2">
-                    <button type="button"
-                        class="-ml-2.5 p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-bright)] lg:hidden"
-                        @click="isMobileMenuOpen = true">
-                        <i class="material-icons" style="font-size: 24px;">menu</i>
+                <button type="button"
+                    class="-ml-2.5 p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-bright)] lg:hidden"
+                    @click="isMobileMenuOpen = true">
+                    <i class="material-icons" style="font-size: 24px;">menu</i>
+                </button>
+                <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
+
+                    <button
+                        x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'custom_stream' || currentView.type === 'category'"
+                        @click="setView('all'); searchQuery=''"
+                        class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+                        title="Clear all filters" x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        x-cloak>
+                        <span class="material-icons" style="font-size: 24px;">cancel</span>
                     </button>
-                    
-                    <!-- (NEW) Desktop Title Area -->
-                    <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
-                        <button
-                            x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'custom_stream' || currentView.type === 'category'"
-                            @click="setView('all'); searchQuery=''"
-                            class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
-                            title="Clear all filters" x-transition:enter="transition ease-out duration-100"
-                            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
-                            x-transition:leave="transition ease-in duration-75"
-                            x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
-                            x-cloak>
-                            <span class="material-icons" style="font-size: 24px;">cancel</span>
-                        </button>
-                        <button x-show="filterHistory.length > 0" @click="goBackOneFilter()"
-                            class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
-                            title="Go back one filter step" x-transition:enter="transition ease-out duration-100"
-                            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
-                            x-transition:leave="transition ease-in duration-75"
-                            x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
-                            x-cloak>
-                            <span class="material-icons" style="font-size: 24px;">arrow_back</span>
-                        </button>
-                        <div class="min-w-0 flex-1 flex items-center">
-                            <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentTitle"></h1>
-                        </div>
+
+                    <button x-show="filterHistory.length > 0" @click="goBackOneFilter()"
+                        class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+                        title="Go back one filter step" x-transition:enter="transition ease-out duration-100"
+                        x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+                        x-transition:leave="transition ease-in duration-75"
+                        x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+                        x-cloak>
+                        <span class="material-icons" style="font-size: 24px;">arrow_back</span>
+                    </button>
+
+                    <div class="min-w-0 flex-1 flex items-center">
+                        <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentTitle"></h1>
                     </div>
                 </div>
+                <div class="flex shrink-0 items-center gap-2 pl-4">
 
-                <!-- (NEW) Right side: Search, Autoplay, Scan, Sort (desktop) -->
-                <div class="flex flex-1 items-center justify-end gap-2 pl-4 lg:flex-none">
-
-                    <!-- (NEW) Search Bar (takes up remaining space on mobile) -->
-                    <div class="relative w-full flex-1 lg:w-auto lg:flex-none">
-                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
-                            <i class="material-icons text-[var(--text-secondary)]" style="font-size: 20px;">search</i>
-                        </span>
-                        <input type="search" placeholder="Search..." x-model.debounce.300ms="searchQuery"
-                            class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] pl-10 text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] lg:w-52">
-                    </div>
-
-                    <!-- (NEW) Autoplay Toggle (Fix: removed 'hidden' and 'sm:inline-flex') -->
-                    <div class="flex shrink-0 items-center gap-1.5" title="Toggle Autoplay">
+                    <div class="flex items-center gap-1.5" title="Toggle Autoplay">
                         <span class="material-icons text-sm"
                             :class="isAutoplayEnabled ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)]'">
                             autoplay
@@ -381,8 +358,13 @@
                                 :class="{ 'translate-x-4': isAutoplayEnabled, 'translate-x-0': !isAutoplayEnabled }"></span>
                         </button>
                     </div>
-
-                    <!-- (NEW) Sort (Desktop Only) -->
+                    <div class="relative">
+                        <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                            <i class="material-icons text-[var(--text-secondary)]" style="font-size: 20px;">search</i>
+                        </span>
+                        <input type="search" placeholder="Search..." x-model.debounce.300ms="searchQuery"
+                            class="w-40 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] pl-10 text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] sm:w-52">
+                    </div>
                     <select x-model="sortOrder"
                         class="hidden rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] sm:block">
                         <option value="aired_newest">Aired (Newest)</option>
@@ -390,9 +372,7 @@
                         <option value="uploaded_newest">Upload (Newest)</option>
                         <option value="uploaded_oldest">Upload (Oldest)</option>
                     </select>
-                    
-                    <!-- (NEW) Scan Button -->
-                    <button class="p-2 shrink-0 text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
+                    <button class="p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
                         @click="scanVideoLibrary(false)" :disabled="isScanning">
                         <i class="material-icons" :class="{ 'animate-spin': isScanning }"
                             style="font-size: 20px;">refresh</i>
@@ -447,18 +427,6 @@
                                     :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
                                         class="material-icons" style="font-size: 20px;"
                                         x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
-                                
-                                <!-- (NEW) Only show download button if in PWA mode -->
-                                <template x-if="isPwaMode">
-                                    <button class="p-1" 
-                                        @click.prevent="handleOfflineClick(video, $event)"
-                                        :class="isOffline(video.video_url) ? 'text-green-400' : 'text-[var(--text-secondary)] hover:text-green-400'"
-                                        :title="isOffline(video.video_url) ? 'Remove from offline' : 'Save for offline'">
-                                        
-                                        <i class="material-icons" style="font-size: 20px;"
-                                            x-text="getOfflineIcon(video.video_url)"></i>
-                                    </button>
-                                </template>
                             </div>
                         </div>
                     </div>
@@ -528,8 +496,7 @@
 
                         <div class="mt-4 flex items-center gap-4 border-b border-[var(--divider-color)] pb-3">
 
-                            <!-- (NEW) This is the Favorite button -->
-                            <button class_button class="flex items-center gap-1.5 p-1.5 text-sm"
+                            <button class="flex items-center gap-1.5 p-1.5 text-sm"
                                 @click.prevent="toggleFavorite(modalVideo)"
                                 :class="modalVideo.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'">
                                 <i class="material-icons" style="font-size: 20px;"
@@ -538,7 +505,6 @@
                                     x-text="modalVideo.is_favorite ? 'Favorite' : 'Add to Favorites'"></span>
                             </button>
 
-                            <!-- (This is the Watch Later button) -->
                             <button class="flex items-center gap-1.5 p-1.5 text-sm"
                                 @click.prevent="toggleBookmark(modalVideo)"
                                 :class="modalVideo.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'">
@@ -548,20 +514,6 @@
                                     x-text="modalVideo.is_read_later ? 'Bookmarked' : 'Watch Later'"></span>
                             </button>
 
-                            <!-- (NEW) Only show Download button if in PWA mode -->
-                            <template x-if="isPwaMode">
-                                <button class="flex items-center gap-1.5 p-1.5 text-sm"
-                                    @click.prevent="handleOfflineClick(modalVideo, $event)"
-                                    :class="isOffline(modalVideo.video_url) ? 'text-green-400' : 'text-[var(--text-secondary)] hover:text-green-400'"
-                                    :title="isOffline(modalVideo.video_url) ? 'Remove from offline' : 'Save for offline'">
-                                    <i class="material-icons" style="font-size: 20px;"
-                                        x-text="getOfflineIcon(modalVideo.video_url)"></i>
-                                    <span class="hidden sm:inline"
-                                        x-text="isOffline(modalVideo.video_url) ? 'Saved Offline' : 'Save Offline'"></span>
-                                </button>
-                            </template>
-                            
-                            <!-- (NEW) Removed duplicate <template> tag -->
                             <template x-if="modalVideo.youtube_id">
                                 <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank"
                                     class="flex items-center gap-1.5 p-1.5 text-sm text-[var(--text-secondary)] yt-icon"

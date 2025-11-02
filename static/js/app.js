@@ -22,31 +22,14 @@ function videoApp() {
         videosToShow: 75,
         filterHistory: [], // Filter history for back button
 
-        // --- PWA State (NEW) ---
-        isPwaMode: false, // (NEW) Will be true if running as an installed PWA
-        isOfflineReady: false, // Tracks if offline check is complete
-        offlineVideoUrls: new Set(), // Holds URLs of downloaded videos
-        downloadQueue: new Map(), // Tracks download progress
-        videoCacheName: 'video-cache-v4', // Must match sw.js
-        // --- End PWA State ---
-
         // --- Init ---
         init() {
-            // (NEW) Check if we are in PWA standalone mode
-            if (window.matchMedia('(display-mode: standalone)').matches) {
-                this.isPwaMode = true;
-                console.log('Running in PWA standalone mode.');
-            }
-
             // Initialize the currentView and openFolderPaths in the global store
             Alpine.store('globalState').currentView = this.currentView;
             // Ensure openFolderPaths exists for the global store
             Alpine.store('globalState').openFolderPaths = [];
 
-            // --- PWA Init (NEW) ---
-            // Register the service worker. It will call fetchData() when it's ready.
-            this.registerServiceWorker();
-            // --- End PWA Init ---
+            this.fetchData();
         },
 
         async fetchData() {
@@ -70,12 +53,6 @@ function videoApp() {
             } catch (e) {
                 console.error('Error fetching data:', e);
                 this.appData = { videos: [], folder_tree: {}, smartPlaylists: [] };
-                
-                // (NEW) If fetching data fails, we are likely offline.
-                // Switch to the downloaded view.
-                if (!navigator.onLine) {
-                    this.setView('downloaded');
-                }
             }
         },
 
@@ -96,8 +73,6 @@ function videoApp() {
             } else if (viewType === 'history') {
                 // Filter for videos watched for 4 seconds or more
                 videos = this.appData.videos.filter(v => v.watched_duration >= 4);
-            } else if (viewType === 'downloaded') { // (NEW) Downloaded View
-                videos = this.appData.videos.filter(v => this.isOffline(v.video_url));
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -215,7 +190,6 @@ function videoApp() {
             if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
             if (viewType === 'folder') return 'No videos found in this folder.';
             if (viewType === 'history') return 'No videos in your history yet.';
-            if (viewType === 'downloaded') return 'No videos saved for offline use.'; // (NEW) Message
             // NEW: Add message for smart playlists
             if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
@@ -360,6 +334,7 @@ function videoApp() {
             }
         },
 
+        // PLACEHOLDER: We will implement renaming in a future step
         async renamePlaylist(playlist) {
             const newName = prompt(`Rename playlist '${playlist.name}':`, playlist.name);
             
@@ -391,6 +366,7 @@ function videoApp() {
             }
         },
 
+        // IMPLEMENTED: Delete Playlist functionality
         async deletePlaylist(playlistId) {
             // Use existing browser confirm() as per placeholder structure
             if (confirm('Are you sure you want to permanently delete this playlist?')) {
@@ -453,6 +429,8 @@ function videoApp() {
             }
         },
 
+        // Function to apply filter criteria (called by filterEditor)
+        // FIXED: Added missing function definition wrapper
         async saveFilterToPlaylist(playlistId, filter) {
             try {
                 const response = await fetch(`/api/playlist/${playlistId}/filter`, {
@@ -542,7 +520,6 @@ function videoApp() {
             else if (type === 'favorites') { this.currentTitle = 'Favorites'; }
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
-            else if (type === 'downloaded') { this.currentTitle = 'Downloaded'; } // (NEW) Downloaded Title
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
@@ -726,138 +703,6 @@ function videoApp() {
             }
         },
 
-        // --- PWA Offline Functions (NEW) ---
-
-        async registerServiceWorker() {
-            if ('serviceWorker' in navigator) {
-                try {
-                    const reg = await navigator.serviceWorker.register('/sw.js');
-                    console.log('Service Worker registered.', reg);
-                    
-                    // (NEW) Wait for the service worker to be "ready" to intercept fetches.
-                    await navigator.serviceWorker.ready;
-                    console.log('Service Worker is active and ready.');
-
-                    // (NEW) Now that the SW is ready, we can safely fetch data.
-                    this.fetchData();
-                    this.checkOfflineStatus();
-
-                } catch (err) {
-                    console.log('Service Worker registration failed:', err);
-                    // (NEW) If SW fails, still try to fetch data normally.
-                    this.fetchData();
-                    this.checkOfflineStatus();
-                }
-            } else {
-                // (NEW) If SW is not supported, just fetch data normally.
-                this.fetchData();
-                this.checkOfflineStatus();
-            }
-        },
-
-        async checkOfflineStatus() {
-            if (!('caches' in window)) {
-                this.isOfflineReady = true; // Mark as ready even if not supported
-                return;
-            }
-            try {
-                const cache = await caches.open(this.videoCacheName);
-                const keys = await cache.keys();
-                const urls = keys.map(req => req.url);
-                this.offlineVideoUrls = new Set(urls);
-                console.log('Offline videos checked:', this.offlineVideoUrls);
-            } catch (e) {
-                console.error('Error checking offline status:', e);
-            } finally {
-                this.isOfflineReady = true; // (NEW) Mark check as complete
-            }
-        },
-
-        isOffline(videoUrl) {
-            return this.offlineVideoUrls.has(videoUrl);
-        },
-
-        getOfflineIcon(videoUrl) {
-            if (!this.isOfflineReady) { // (NEW) Show pending icon
-                return 'hourglass_empty';
-            }
-            if (this.downloadQueue.has(videoUrl)) {
-                return 'downloading'; // Show spinning icon
-            }
-            return this.isOffline(videoUrl) ? 'download_done' : 'download';
-        },
-
-        async handleOfflineClick(video, event) {
-            const videoUrl = video.video_url;
-            if (this.isOffline(videoUrl)) {
-                // Already offline, so delete it
-                this.deleteOfflineVideo(video);
-            } else if (!this.downloadQueue.has(videoUrl)) {
-                // Not offline and not downloading, so start download
-                this.downloadVideo(video, event);
-            }
-        },
-
-        async downloadVideo(video, event) {
-            if (!('caches' in window)) {
-                alert('Offline storage is not supported by your browser.');
-                return;
-            }
-            
-            const videoUrl = video.video_url;
-            const imageUrl = video.image_url;
-
-            this.downloadQueue.set(videoUrl, true); // Add to queue
-            
-            try {
-                const cache = await caches.open(this.videoCacheName);
-                console.log(`[App] Caching video: ${video.title}`);
-                
-                // Fetch and cache the video and its image
-                await cache.add(videoUrl);
-                if (imageUrl) {
-                    await cache.add(imageUrl);
-                }
-
-                // Success! Add to our Set for instant UI update
-                this.offlineVideoUrls.add(videoUrl);
-                console.log(`[App] Successfully cached: ${video.title}`);
-
-            } catch (e) {
-                console.error('Failed to download video:', e);
-                alert(`Failed to save "${video.title}" for offline. It may be too large or the network failed.`);
-                // If it failed, remove from cache just in case
-                this.deleteOfflineVideo(video);
-            } finally {
-                // Always remove from queue when done
-                this.downloadQueue.delete(videoUrl);
-            }
-        },
-
-        async deleteOfflineVideo(video) {
-            if (!('caches' in window)) return;
-            
-            const videoUrl = video.video_url;
-            const imageUrl = video.image_url;
-
-            try {
-                const cache = await caches.open(this.videoCacheName);
-                await cache.delete(videoUrl);
-                if (imageUrl) {
-                    await cache.delete(imageUrl);
-                }
-                
-                // Update UI
-                this.offlineVideoUrls.delete(videoUrl);
-                console.log(`[App] Removed from offline: ${video.title}`);
-
-            } catch (e) {
-                console.error('Failed to delete video from cache:', e);
-            }
-        },
-        
-        // --- End PWA Offline Functions ---
-
         // --- Data Modification ---
 
         async updateVideoProgress(video, duration) {
@@ -942,7 +787,7 @@ function filterEditor(playlistId, appData) {
         // allAuthors: [],     // <-- REMOVED
         typeLabels: {
             'title': 'Title Content',
-            'author': 'Author / Channel' // <-- CORRECTED THIS LABEL
+            'author': 'Author'
         },
 
         // --- REMOVED THE init() FUNCTION ---
@@ -1060,4 +905,3 @@ document.addEventListener('alpine:init', () => {
         currentView: { type: 'all', id: null, author: null },
     });
 });
-
