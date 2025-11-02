@@ -30,18 +30,20 @@ function videoApp() {
         // --- End PWA State ---
 
         // --- Init ---
-        init() {
+        async init() {
             // Initialize the currentView and openFolderPaths in the global store
             Alpine.store('globalState').currentView = this.currentView;
             // Ensure openFolderPaths exists for the global store
             Alpine.store('globalState').openFolderPaths = [];
 
-            this.fetchData();
-
-            // --- PWA Init (NEW) ---
-            this.registerServiceWorker();
-            this.checkOfflineStatus();
+            // --- PWA Init (MOVED & AWAITED) ---
+            // (NEW) We MUST wait for the SW to be ready before fetching data
+            await this.registerServiceWorker();
             // --- End PWA Init ---
+
+            // (NEW) Now that the SW is ready, we can safely fetch data.
+            this.fetchData();
+            this.checkOfflineStatus();
         },
 
         async fetchData() {
@@ -722,11 +724,18 @@ function videoApp() {
 
         // --- PWA Offline Functions (NEW) ---
 
-        registerServiceWorker() {
+        async registerServiceWorker() {
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => console.log('Service Worker registered.', reg))
-                    .catch(err => console.log('Service Worker registration failed:', err));
+                try {
+                    const reg = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker registered.', reg);
+                    // (NEW) This promise resolves when the service worker is active
+                    // and ready to intercept fetch requests.
+                    await navigator.serviceWorker.ready;
+                    console.log('Service Worker is active and ready.');
+                } catch (err) {
+                    console.log('Service Worker registration failed:', err);
+                }
             }
         },
 
