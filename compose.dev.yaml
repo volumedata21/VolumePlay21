@@ -1,0 +1,31 @@
+services:
+  volumeplay-dev:
+    # This tells Compose to build the image from the local Dockerfile
+    # instead of pulling an image from Docker Hub.
+    build: .
+    container_name: volumeplay-dev
+    ports:
+      - "2121:5000"
+    volumes:
+      # Mount your local videos and data folders just like in production
+      - ./videos:/videos:ro 
+      - ./data:/data
+      
+      # (THE IMPORTANT PART)
+      # This mounts your *entire* local project directory (app.py, templates, etc.)
+      # into the /app directory inside the container.
+      - .:/app
+      
+    environment:
+      - DATA_DIR=/data
+      - VIDEO_DIR=/videos
+      
+      # (CHANGED)
+      # Set FLASK_DEBUG=1 to enable the built-in reloader
+      - FLASK_DEBUG=1
+      - FLASK_APP=app.py # Explicitly tell Flask what file to run
+      
+    # (CHANGED)
+    # We override the Dockerfile's CMD (which uses gunicorn)
+    # to use Flask's built-in server, which is better for development.
+    command: flask run --host=0.0.0.0 --port=5000

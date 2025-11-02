@@ -23,24 +23,29 @@ function videoApp() {
         filterHistory: [], // Filter history for back button
 
         // --- PWA State (NEW) ---
+        isPwaMode: false, // (NEW) Will be true if running as an installed PWA
         isOfflineReady: false, // Tracks if offline check is complete
         offlineVideoUrls: new Set(), // Holds URLs of downloaded videos
         downloadQueue: new Map(), // Tracks download progress
-        videoCacheName: 'video-cache-v1', // Must match sw.js
+        videoCacheName: 'video-cache-v4', // Must match sw.js
         // --- End PWA State ---
 
         // --- Init ---
         init() {
+            // (NEW) Check if we are in PWA standalone mode
+            if (window.matchMedia('(display-mode: standalone)').matches) {
+                this.isPwaMode = true;
+                console.log('Running in PWA standalone mode.');
+            }
+
             // Initialize the currentView and openFolderPaths in the global store
             Alpine.store('globalState').currentView = this.currentView;
             // Ensure openFolderPaths exists for the global store
             Alpine.store('globalState').openFolderPaths = [];
 
-            this.fetchData();
-
             // --- PWA Init (NEW) ---
+            // Register the service worker. It will call fetchData() when it's ready.
             this.registerServiceWorker();
-            this.checkOfflineStatus();
             // --- End PWA Init ---
         },
 
@@ -210,6 +215,7 @@ function videoApp() {
             if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
             if (viewType === 'folder') return 'No videos found in this folder.';
             if (viewType === 'history') return 'No videos in your history yet.';
+            if (viewType === 'downloaded') return 'No videos saved for offline use.'; // (NEW) Message
             // NEW: Add message for smart playlists
             if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
@@ -659,7 +665,7 @@ function videoApp() {
 
             let formattedText = cleanText
                 .replace(urlRegex, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
-                .replace(atRegex, (match, username) => `<a href="https.://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
+                .replace(atRegex, (match, username) => `<a href="https://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(hashRegex, (match, tag) => `<a href="https://www.youtube.com/hashtag/${tag}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(/\n/g, '<br>');
 
@@ -722,11 +728,30 @@ function videoApp() {
 
         // --- PWA Offline Functions (NEW) ---
 
-        registerServiceWorker() {
+        async registerServiceWorker() {
             if ('serviceWorker' in navigator) {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(reg => console.log('Service Worker registered.', reg))
-                    .catch(err => console.log('Service Worker registration failed:', err));
+                try {
+                    const reg = await navigator.serviceWorker.register('/sw.js');
+                    console.log('Service Worker registered.', reg);
+                    
+                    // (NEW) Wait for the service worker to be "ready" to intercept fetches.
+                    await navigator.serviceWorker.ready;
+                    console.log('Service Worker is active and ready.');
+
+                    // (NEW) Now that the SW is ready, we can safely fetch data.
+                    this.fetchData();
+                    this.checkOfflineStatus();
+
+                } catch (err) {
+                    console.log('Service Worker registration failed:', err);
+                    // (NEW) If SW fails, still try to fetch data normally.
+                    this.fetchData();
+                    this.checkOfflineStatus();
+                }
+            } else {
+                // (NEW) If SW is not supported, just fetch data normally.
+                this.fetchData();
+                this.checkOfflineStatus();
             }
         },
 
@@ -1035,3 +1060,4 @@ document.addEventListener('alpine:init', () => {
         currentView: { type: 'all', id: null, author: null },
     });
 });
+
