@@ -30,20 +30,18 @@ function videoApp() {
         // --- End PWA State ---
 
         // --- Init ---
-        async init() {
+        init() {
             // Initialize the currentView and openFolderPaths in the global store
             Alpine.store('globalState').currentView = this.currentView;
             // Ensure openFolderPaths exists for the global store
             Alpine.store('globalState').openFolderPaths = [];
 
-            // --- PWA Init (MOVED & AWAITED) ---
-            // (NEW) We MUST wait for the SW to be ready before fetching data
-            await this.registerServiceWorker();
-            // --- End PWA Init ---
-
-            // (NEW) Now that the SW is ready, we can safely fetch data.
             this.fetchData();
+
+            // --- PWA Init (NEW) ---
+            this.registerServiceWorker();
             this.checkOfflineStatus();
+            // --- End PWA Init ---
         },
 
         async fetchData() {
@@ -724,18 +722,11 @@ function videoApp() {
 
         // --- PWA Offline Functions (NEW) ---
 
-        async registerServiceWorker() {
+        registerServiceWorker() {
             if ('serviceWorker' in navigator) {
-                try {
-                    const reg = await navigator.serviceWorker.register('/sw.js');
-                    console.log('Service Worker registered.', reg);
-                    // (NEW) This promise resolves when the service worker is active
-                    // and ready to intercept fetch requests.
-                    await navigator.serviceWorker.ready;
-                    console.log('Service Worker is active and ready.');
-                } catch (err) {
-                    console.log('Service Worker registration failed:', err);
-                }
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('Service Worker registered.', reg))
+                    .catch(err => console.log('Service Worker registration failed:', err));
             }
         },
 
