@@ -141,7 +141,7 @@
                                     </div>
                                 </a>
 
-                                <div x-show="isEditingFilters" x-data="filterEditor(playlist.id)"
+                                <div x-show="isEditingFilters" x-data="filterEditor(playlist.id, appData)"
                                     @click.outside="isEditingFilters = false"
                                     x-transition:enter="transition ease-out duration-150"
                                     x-transition:enter-start="opacity-0 translate-y-[-5px]"
@@ -149,11 +149,11 @@
                                     x-transition:leave="transition ease-in duration-100"
                                     x-transition:leave-start="opacity-100 translate-y-0"
                                     x-transition:leave-end="opacity-0 translate-y-[-5px]"
-                                    class="p-3 mt-1 space-y-2 border border-[var(--highlight-ring)]/50 rounded-md bg-[var(--bg-darkest)] shadow-xl"
+                                    class="p-3 mt-1 space-y-3 border border-[var(--highlight-ring)]/50 rounded-md bg-[var(--bg-darkest)] shadow-xl"
                                     x-cloak>
 
                                     <div class="flex items-center justify-between">
-                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Title Filter
+                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Filter
                                         </h4>
                                         <button @click.stop="isEditingFilters = false"
                                             class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500"
@@ -162,22 +162,49 @@
                                         </button>
                                     </div>
 
-                                    <div class="space-y-2">
-                                        <div>
-                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
-                                                Search Text (Use quotes for exact phrase match)
-                                            </label>
-                                            <input type="text" x-model="textValue"
-                                                @keydown.enter.prevent="$event.target.blur(); applyFilter()"
-                                                class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
-                                                placeholder="e.g. 'time' or 'space exploration'">
-                                        </div>
-
-                                        <button @click="applyFilter()" :disabled="!isFilterValid()"
-                                            class="w-full rounded-md bg-[var(--text-highlight)] disabled:bg-opacity-50 px-3 py-1.5 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80 transition-colors">
-                                            Apply Filter
-                                        </button>
+                                    <div>
+                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter Type</label>
+                                        <select x-model="selectedType" @change="resetValues()"
+                                            class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                            <option value="title">Title</option>
+                                            <option value="author">Author / Channel</option>
+                                        </select>
                                     </div>
+
+                                    <template x-if="selectedType === 'title'">
+                                        <div class="space-y-2">
+                                            <div>
+                                                <label class="block text-xs text-[var(--text-secondary)] mb-1">
+                                                    Search Text (Use quotes for exact phrase match)
+                                                </label>
+                                                <input type="text" x-model="textValue"
+                                                    @keydown.enter.prevent="applyFilter()"
+                                                    class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
+                                                    placeholder="e.g. 'time' or 'space exploration'">
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <template x-if="selectedType === 'author'">
+                                        <div class="space-y-2">
+                                            <div>
+                                                <label class="block text-xs text-[var(--text-secondary)] mb-1">
+                                                    Select Authors (Hold Ctrl/Cmd to select multiple)
+                                                </label>
+                                                <select multiple x-model="selectedAuthors"
+                                                    class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                                    <template x-for="author in allAuthors" :key="author">
+                                                        <option :value="author" x-text="author"></option>
+                                                    </template>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </template>
+
+                                    <button @click="applyFilter()" :disabled="!isFilterValid()"
+                                        class="w-full rounded-md bg-[var(--text-highlight)] disabled:bg-opacity-50 px-3 py-1.5 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80 transition-colors">
+                                        Apply Filter
+                                    </button>
                                 </div>
 
                                 <template
@@ -194,8 +221,14 @@
 
                                                 <span>
                                                     <span class="font-semibold" x-text="filter.label + ': '"></span>
-                                                    <span class="italic"
-                                                        x-text="'&quot;' + filter.value + '&quot;'"></span>
+                                                    
+                                                    <template x-if="typeof filter.value === 'string'">
+                                                        <span class="italic" x-text="'&quot;' + filter.value + '&quot;'"></span>
+                                                    </template>
+                                                    
+                                                    <template x-if="Array.isArray(filter.value)">
+                                                        <span class="italic" x-text="filter.value.join(', ')"></span>
+                                                    </template>
                                                 </span>
 
                                                 <button

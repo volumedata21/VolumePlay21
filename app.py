@@ -359,18 +359,28 @@ def add_playlist_filter(playlist_id):
         # 1. Load existing filters
         filters_list = json.loads(playlist.filters) if playlist.filters else []
         
-        # 2. --- CHECK FOR DUPLICATES ---
-        # Normalize the new filter's value for comparison
-        new_value = str(new_filter.get('value', '')).lower().strip()
+        # 2. --- UPDATED DUPLICATE CHECK ---
+        new_value = new_filter.get('value')
         new_type = new_filter.get('type')
-
         found_duplicate = False
+
         for f in filters_list:
-            existing_value = str(f.get('value', '')).lower().strip()
+            existing_value = f.get('value')
             existing_type = f.get('type')
             
-            # If a filter with the same type and value already exists, mark it.
-            if existing_type == new_type and existing_value == new_value:
+            # Only compare filters of the same type
+            if existing_type != new_type:
+                continue
+
+            # Compare values based on their type (string vs list)
+            is_match = False
+            if isinstance(new_value, str) and isinstance(existing_value, str):
+                is_match = new_value.lower().strip() == existing_value.lower().strip()
+            elif isinstance(new_value, list) and isinstance(existing_value, list):
+                # Use sets for order-insensitive comparison of lists
+                is_match = set(new_value) == set(existing_value)
+            
+            if is_match:
                 found_duplicate = True
                 break
         

@@ -110,8 +110,15 @@ function videoApp() {
                                 videos = videos.filter(v => (v.title || '').toLowerCase().includes(searchTerm));
                             }
                         }
-                        // In the future, other filter types (duration, etc.) would be added here
-                        // else if (filter.type === 'duration') { ... }
+                        // --- NEW: Handle Author Filter ---
+                        else if (filter.type === 'author') {
+                            // filter.value will be an array of author names, e.g., ['Davie', 'Julio']
+                            const allowedAuthors = filter.value; 
+                            if (allowedAuthors && allowedAuthors.length > 0) {
+                                // Keep videos where the author is in the allowed list
+                                videos = videos.filter(v => allowedAuthors.includes(v.author));
+                            }
+                        }
                     });
                 }
             }
@@ -742,59 +749,74 @@ function videoApp() {
 }
 
 /**
- * NEW: Alpine.js component for managing the filter selection and application.
- * SIMPLIFIED to only handle 'title' content.
+ * UPDATED: Alpine.js component for managing the filter selection and application.
+ * Now handles 'title' and 'author' filter types.
  */
-function filterEditor(playlistId) {
+function filterEditor(playlistId, appData) {
     return {
         playlistId: playlistId,
-        selectedType: 'title',
-
-        // 1. RE-ADD: textValue state property for reactivity
-        textValue: '',
-
+        selectedType: 'title', // Default filter type
+        textValue: '',         // For title filter
+        selectedAuthors: [],   // For author filter
+        // allAuthors: [],     // <-- REMOVED
         typeLabels: {
             'title': 'Title Content',
+            'author': 'Author'
         },
 
+        // --- REMOVED THE init() FUNCTION ---
+
+        // --- NEW: Replaced allAuthors with a GETTER ---
+        get allAuthors() {
+            // This now runs every time the dropdown needs the list,
+            // so it will always have the freshest data.
+            const videos = appData.videos || [];
+            const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
+            return Array.from(authors).sort();
+        },
+// ...
+
         resetValues() {
-            // 2. UPDATED: Reset the reactive property
             this.textValue = '';
+            this.selectedAuthors = [];
         },
 
         isFilterValid() {
-            // 3. UPDATED: Read from the reactive property
-            // This ensures the :disabled binding re-evaluates on every keystroke
             if (this.selectedType === 'title') {
                 return typeof this.textValue === 'string' && this.textValue.trim().length > 0;
+            }
+            if (this.selectedType === 'author') {
+                return this.selectedAuthors.length > 0;
             }
             return false;
         },
 
         applyFilter() {
             if (!this.isFilterValid()) {
-                console.warn('Filter submission ignored: Input is empty or invalid.');
+                console.warn('Filter submission ignored: Input is invalid.');
                 return;
             }
 
-            // 4. UPDATED: Get the value from the reactive property
-            const filterValue = this.textValue.trim();
+            let filterValue;
+            if (this.selectedType === 'title') {
+                filterValue = this.textValue.trim();
+            } else if (this.selectedType === 'author') {
+                filterValue = this.selectedAuthors; // This will be an array
+            }
 
             let filter = {
                 id: `${Date.now()}-${this.selectedType}`,
                 type: this.selectedType,
                 label: this.typeLabels[this.selectedType],
-                value: filterValue // Use the value from the reactive property
+                value: filterValue
             };
 
-            // 5. UPDATED: Use $dispatch to send an event up to videoApp
-            // This replaces the brittle document.querySelector
             this.$dispatch('save-filter', {
                 playlistId: this.playlistId,
                 filter: filter
             });
 
-            // Close the editor UI by manipulating the isEditingFilters state on the parent element's context
+            // Close the editor UI
             this.$root.parentElement.__x.$data.isEditingFilters = false;
         }
     };
