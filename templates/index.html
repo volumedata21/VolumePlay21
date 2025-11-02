@@ -74,6 +74,11 @@
                     class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
                     :class="currentView.type === 'history' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">history</i> History</a>
+                
+                <a href="#" @click.prevent="setView('downloaded')"
+                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
+                    :class="currentView.type === 'downloaded' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
+                        class="material-icons" style="font-size:20px;">download_done</i> Downloaded</a>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
@@ -523,6 +528,18 @@
                                 <span class="hidden sm:inline"
                                     x-text="modalVideo.is_read_later ? 'Bookmarked' : 'Watch Later'"></span>
                             </button>
+
+                            <button class="flex items-center gap-1.5 p-1.5 text-sm"
+                                @click.prevent="handleOfflineClick(modalVideo, $event)"
+                                :class="isOffline(modalVideo.video_url) ? 'text-green-400' : 'text-[var(--text-secondary)] hover:text-green-400'"
+                                :title="isOffline(modalVideo.video_url) ? 'Remove from offline' : 'Save for offline'">
+                                <i class="material-icons" style="font-size: 20px;"
+                                    x-text="getOfflineIcon(modalVideo.video_url)"></i>
+                                <span class="hidden sm:inline"
+                                    x-text="isOffline(modalVideo.video_url) ? 'Saved Offline' : 'Save Offline'"></span>
+                            </button>
+
+                            <template x-if="modalVideo.youtube_id">
 
                             <template x-if="modalVideo.youtube_id">
                                 <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank"

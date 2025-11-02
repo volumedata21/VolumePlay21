@@ -23,6 +23,7 @@ function videoApp() {
         filterHistory: [], // Filter history for back button
 
         // --- PWA State (NEW) ---
+        isOfflineReady: false, // Tracks if offline check is complete
         offlineVideoUrls: new Set(), // Holds URLs of downloaded videos
         downloadQueue: new Map(), // Tracks download progress
         videoCacheName: 'video-cache-v1', // Must match sw.js
@@ -64,6 +65,12 @@ function videoApp() {
             } catch (e) {
                 console.error('Error fetching data:', e);
                 this.appData = { videos: [], folder_tree: {}, smartPlaylists: [] };
+                
+                // (NEW) If fetching data fails, we are likely offline.
+                // Switch to the downloaded view.
+                if (!navigator.onLine) {
+                    this.setView('downloaded');
+                }
             }
         },
 
@@ -84,6 +91,8 @@ function videoApp() {
             } else if (viewType === 'history') {
                 // Filter for videos watched for 4 seconds or more
                 videos = this.appData.videos.filter(v => v.watched_duration >= 4);
+            } else if (viewType === 'downloaded') { // (NEW) Downloaded View
+                videos = this.appData.videos.filter(v => this.isOffline(v.video_url));
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -527,6 +536,7 @@ function videoApp() {
             else if (type === 'favorites') { this.currentTitle = 'Favorites'; }
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
+            else if (type === 'downloaded') { this.currentTitle = 'Downloaded'; } // (NEW) Downloaded Title
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
@@ -721,7 +731,10 @@ function videoApp() {
         },
 
         async checkOfflineStatus() {
-            if (!('caches' in window)) return;
+            if (!('caches' in window)) {
+                this.isOfflineReady = true; // Mark as ready even if not supported
+                return;
+            }
             try {
                 const cache = await caches.open(this.videoCacheName);
                 const keys = await cache.keys();
@@ -730,6 +743,8 @@ function videoApp() {
                 console.log('Offline videos checked:', this.offlineVideoUrls);
             } catch (e) {
                 console.error('Error checking offline status:', e);
+            } finally {
+                this.isOfflineReady = true; // (NEW) Mark check as complete
             }
         },
 
@@ -738,6 +753,9 @@ function videoApp() {
         },
 
         getOfflineIcon(videoUrl) {
+            if (!this.isOfflineReady) { // (NEW) Show pending icon
+                return 'hourglass_empty';
+            }
             if (this.downloadQueue.has(videoUrl)) {
                 return 'downloading'; // Show spinning icon
             }
