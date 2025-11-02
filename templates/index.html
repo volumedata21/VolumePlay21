@@ -57,22 +57,22 @@
                 </div>
             </div>
 
-            <nav class="flex-1 space-y-1 overflow-y-auto px-4 pb-4">
+            <nav class="flex-1 space-y-1 overflow-y-auto px-4 pb-4 pt-4">
                 <a href="#" @click.prevent="setView('all')"
-                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50"
-                    :class="currentView.type === 'all' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i
+                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
+                    :class="currentView.type === 'all' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">apps</i> All Videos</a>
                 <a href="#" @click.prevent="setView('favorites')"
-                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50"
-                    :class="currentView.type === 'favorites' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i
+                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
+                    :class="currentView.type === 'favorites' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">star_outline</i> Favorites</a>
                 <a href="#" @click.prevent="setView('watchLater')"
-                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50"
-                    :class="currentView.type === 'watchLater' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i
+                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
+                    :class="currentView.type === 'watchLater' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">watch_later</i> Watch Later</a>
                 <a href="#" @click.prevent="setView('history')"
-                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-[var(--bg-highlight)]/50"
-                    :class="currentView.type === 'history' ? 'main-nav-selected' : 'text-[var(--text-main)]'"><i
+                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300"
+                    :class="currentView.type === 'history' ? 'main-nav-selected' : 'text-[var(--text-main)] hover:bg-[var(--bg-highlight)]/50 hover:text-[#5EEAD4]'"><i
                         class="material-icons" style="font-size:20px;">history</i> History</a>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
@@ -163,7 +163,8 @@
                                     </div>
 
                                     <div>
-                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter Type</label>
+                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter
+                                            Type</label>
                                         <select x-model="selectedType" @change="resetValues()"
                                             class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
                                             <option value="title">Title</option>
@@ -221,11 +222,12 @@
 
                                                 <span>
                                                     <span class="font-semibold" x-text="filter.label + ': '"></span>
-                                                    
+
                                                     <template x-if="typeof filter.value === 'string'">
-                                                        <span class="italic" x-text="'&quot;' + filter.value + '&quot;'"></span>
+                                                        <span class="italic"
+                                                            x-text="'&quot;' + filter.value + '&quot;'"></span>
                                                     </template>
-                                                    
+
                                                     <template x-if="Array.isArray(filter.value)">
                                                         <span class="italic" x-text="filter.value.join(', ')"></span>
                                                     </template>
@@ -285,8 +287,8 @@
                         <template x-for="tag in getDynamicTags" :key="tag">
                             <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
                                 draggable="true"
-                                class="inline-block text-sm font-medium text-[var(--text-highlight)] hover:text-white hover:underline px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                style="background-color: #233b4b;" x-text="tag"
+                                class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
+                                x-text="tag"
                                 :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
                             </a>
                         </template>
@@ -369,7 +371,7 @@
                         <option value="aired_oldest">Aired (Oldest)</option>
                         <option value="uploaded_newest">Upload (Newest)</option>
                         <option value="uploaded_oldest">Upload (Oldest)</option>
-                        </select>
+                    </select>
                     <button class="p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
                         @click="scanVideoLibrary(false)" :disabled="isScanning">
                         <i class="material-icons" :class="{ 'animate-spin': isScanning }"

@@ -1,14 +1,14 @@
 services:
-  volumeplay:
-    build: .
-    container_name: volumeplay
+  volumeplay21:
+    image: volumedata21/volumeplay21:latest
+    container_name: volumeplay21
     ports:
-      - "2121:5000" # Host port 8080 maps to container port 5000
+      - "2121:5000"
     volumes:
-      - ./videos:/videos:ro # Mounts your local ./videos folder as read-only
-      - ./data:/data # Creates a named volume for the persistent database
+      - ./videos:/videos:ro # Mounts your local videos folder as read-only
+      - ./data:/data # Mounts local ./data folder for the persistent database
     environment:
       - DATA_DIR=/data
       - VIDEO_DIR=/videos
-      - FLASK_DEBUG=0 # Set to 1 for development, 0 for production
+      - FLASK_DEBUG=0 # Always 0 for production
     restart: unless-stopped
