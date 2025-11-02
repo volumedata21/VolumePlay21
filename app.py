@@ -293,6 +293,16 @@ def home():
     """Serves the main index.html template."""
     return render_template('index.html')
 
+@app.route('/manifest.json')
+def serve_manifest():
+    """Serves the Web App Manifest file."""
+    return send_from_directory(basedir, 'manifest.json', mimetype='application/manifest+json')
+
+@app.route('/sw.js')
+def serve_service_worker():
+    """Serves the Service Worker JavaScript file."""
+    return send_from_directory(basedir, 'sw.js', mimetype='application/javascript')
+
 ## --- API: Get All Data ---
 
 @app.route('/api/data')
