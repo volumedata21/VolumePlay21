@@ -7,7 +7,13 @@ function videoApp() {
         isMobileMenuOpen: false,
         isModalOpen: false,
         isScanning: false,
-        isGeneratingThumbnails: false, // NEW: For the thumbnail button
+        isGeneratingThumbnails: false, // This will still control the spinner/disabled state
+        
+        // --- NEW STATUS VARS ---
+        thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
+        thumbnailPollInterval: null,
+        // --- END NEW ---
+
         isAutoplayEnabled: true, // NEW: Autoplay state (default on)
         isInfoPanelOpen: false, // NEW: For the "More Info" panel
         currentPlaybackSpeed: 1.0,
@@ -199,6 +205,37 @@ function videoApp() {
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.';
         },
+
+        // --- NEW COMPUTED PROPERTY ---
+        get thumbnailButtonText() {
+            if (!this.isGeneratingThumbnails) {
+                return 'Gen. Missing Thumbs';
+            }
+            
+            const status = this.thumbnailStatus.status;
+            
+            if (status === 'starting') {
+                return 'Starting...';
+            }
+            
+            if (status === 'generating') {
+                if (this.thumbnailStatus.total === 0) {
+                    return 'Generating... (Scanning)';
+                }
+                return `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}`;
+            }
+
+            if (status === 'error') {
+                return 'Error (Retry?)';
+            }
+
+            if (status === 'idle') {
+                return 'Finishing...';
+            }
+            
+            return 'Working...'; // Fallback
+        },
+        // --- END NEW ---
 
         // --- Dynamic Tag Filtering Logic ---
 
@@ -830,29 +867,86 @@ function videoApp() {
             }
         },
 
+        // --- NEW POLLING FUNCTIONS ---
+        startThumbnailPolling() {
+            if (this.thumbnailPollInterval) {
+                clearInterval(this.thumbnailPollInterval); // Clear any old pollers
+            }
+            
+            this.isGeneratingThumbnails = true; // Disable button, start spin
+
+            this.thumbnailPollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/thumbnails/status');
+                    if (!response.ok) throw new Error('Status poll failed');
+                    
+                    const data = await response.json();
+                    this.thumbnailStatus = data;
+
+                    // --- MODIFIED: Refresh data *while* generating ---
+                    // This will show new thumbnails as they are committed in batches.
+                    if (data.status === 'generating') {
+                        this.fetchData();
+                    }
+                    // --- END MODIFIED ---
+
+                    // If the job is done (idle) or errored, stop polling
+                    if (data.status === 'idle' || data.status === 'error') {
+                        this.stopThumbnailPolling();
+                    }
+                } catch (e) {
+                    console.error(e);
+                    this.thumbnailStatus.status = 'error';
+                    this.stopThumbnailPolling(); // Stop if we can't even poll
+                }
+            }, 2000); // Poll every 2 seconds
+        },
+
+        stopThumbnailPolling() {
+            if (this.thumbnailPollInterval) {
+                clearInterval(this.thumbnailPollInterval);
+                this.thumbnailPollInterval = null;
+            }
+            
+            this.isGeneratingThumbnails = false; // Re-enable button, stop spin
+            
+            // --- MODIFIED: Do one final fetch ---
+            // If it finished successfully, do one *final* data refresh
+            // to ensure we get the very last batch.
+            if (this.thumbnailStatus.status === 'idle') {
+                console.log('Thumbnail generation complete, doing final fetch.');
+                this.fetchData();
+            }
+            // --- END MODIFIED ---
+        },
+        // --- END NEW ---
+
         // NEW: Function to call the background thumbnail generator
         async generateMissingThumbnails() {
             if (this.isGeneratingThumbnails) return; // Prevent double-clicks
 
-            this.isGeneratingThumbnails = true;
+            this.isGeneratingThumbnails = true; // Immediately disable
+            
             try {
-                // This API endpoint MUST be configured on your backend to run as a background task
-                // and return a 200/202 response immediately.
                 const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
                 
-                if (!response.ok) {
-                     const result = await response.json();
-                     console.error('Failed to start thumbnail generation:', result.error);
+                // On a 200 (already running) or 202 (just started), start polling
+                if (response.status === 200 || response.status === 202) {
+                    this.startThumbnailPolling();
+                } else {
+                    // Handle an immediate failure to start the task
+                    const result = await response.json();
+                    console.error('Failed to start thumbnail generation:', result.error);
+                    this.thumbnailStatus.status = 'error';
+                    this.isGeneratingThumbnails = false; // Re-enable on failure
                 }
-                // If OK, the backend has acknowledged the task.
-                // The user should click the main refresh button to see updates.
                 
             } catch (e) {
                 console.error('Error starting thumbnail generation:', e);
-            } finally {
-                 // Reset button after 2s so user sees feedback
-                 setTimeout(() => { this.isGeneratingThumbnails = false; }, 2000);
+                this.thumbnailStatus.status = 'error';
+                this.isGeneratingThumbnails = false; // Re-enable on failure
             }
+            // --- REMOVED THE 'finally' BLOCK ---
         },
     };
 }

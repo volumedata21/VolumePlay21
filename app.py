@@ -38,6 +38,14 @@ db = SQLAlchemy(app)
 # --- NEW --- Global lock to prevent multiple thumbnail jobs
 thumbnail_generation_lock = threading.Lock()
 
+# --- NEW --- Global status for the thumbnail task
+THUMBNAIL_STATUS = {
+    "status": "idle", # idle, starting, generating, error
+    "message": "",
+    "progress": 0,
+    "total": 0
+}
+
 ## --- Database Models ---
 
 class Video(db.Model):
@@ -307,11 +315,18 @@ def scan_videos():
                     existing_video.uploaded_date = uploaded_date 
                     existing_video.youtube_id = youtube_id
                     
-                if thumbnail_file_path:
-                    existing_video.thumbnail_path = thumbnail_file_path                    
+                    # --- THIS IS THE FIX ---
+                    # Only update the thumbnail path if a new *local* file was
+                    # found. This prevents overwriting a central-generated
+                    # thumb path with 'None' just because no local thumb exists.
+                    if thumbnail_file_path:
+                        existing_video.thumbnail_path = thumbnail_file_path
+                    # --- END FIX ---
+                    
                     existing_video.subtitle_path = srt_path
                     existing_video.subtitle_label = srt_label
                     existing_video.subtitle_lang = srt_lang
+                    # Update new fields
                     existing_video.filename = filename
                     existing_video.file_size = file_size_bytes
                     existing_video.file_format = file_format_str
@@ -416,9 +431,11 @@ def _generate_thumbnails_task():
     This function runs in a separate thread to generate missing thumbnails.
     It MUST be run within an app context.
     """
+    global THUMBNAIL_STATUS
     print("Background thumbnail generation task started...")
     sys.stdout.flush() 
     with app.app_context(): # Need app context to access db
+        generated_count = 0 # --- MOVED COUNT UP HERE ---
         try:
             # --- NEW: Define a writable thumbnail directory ---
             thumb_dir = os.path.join(data_dir, 'thumbnails')
@@ -429,9 +446,22 @@ def _generate_thumbnails_task():
             videos_to_process = Video.query.filter(Video.thumbnail_path == None).all()
             print(f"Found {len(videos_to_process)} videos needing thumbnails.")
             sys.stdout.flush() 
+
+            # --- NEW: Update status for the poller ---
+            THUMBNAIL_STATUS.update({
+                "status": "generating",
+                "message": f"Found {len(videos_to_process)} videos to process.",
+                "progress": 0,
+                "total": len(videos_to_process)
+            })
+            # --- END NEW ---
             
-            generated_count = 0
-            for video in videos_to_process:
+            for i, video in enumerate(videos_to_process):
+                
+                # --- NEW: Update progress ---
+                THUMBNAIL_STATUS["progress"] = i
+                # --- END NEW ---
+
                 try:
                     video_path = video.video_path
                     if not os.path.exists(video_path):
@@ -489,9 +519,22 @@ def _generate_thumbnails_task():
                     print(f"  - General error processing {video.filename}: {e}")
                     sys.stdout.flush() 
                     db.session.rollback() # Rollback this single video's change
+                
+                # --- NEW: Commit in batches of 50 ---
+                # This allows the frontend to see progress as it polls.
+                if generated_count > 0 and generated_count % 50 == 0:
+                    print(f"  - Committing batch of 50 to database...")
+                    sys.stdout.flush()
+                    db.session.commit()
+                # --- END NEW ---
             
+            # --- MODIFIED: Commit any remaining items at the end ---
             if generated_count > 0:
+                print("  - Committing final batch to database...")
+                sys.stdout.flush()
                 db.session.commit() # Commit all successful updates at the end
+            # --- END MODIFIED ---
+
             print(f"Thumbnail generation task finished. Generated {generated_count} new thumbnails.")
             sys.stdout.flush() 
 
@@ -499,11 +542,28 @@ def _generate_thumbnails_task():
             print(f"Fatal error in thumbnail task: {e}")
             sys.stdout.flush() 
             db.session.rollback()
+            # --- NEW: Report error status ---
+            THUMBNAIL_STATUS.update({
+                "status": "error",
+                "message": str(e),
+                "progress": 0,
+                "total": 0
+            })
+            # --- END NEW ---
         finally:
             # CRITICAL: Release the lock so the task can be run again later
             thumbnail_generation_lock.release()
             print("Thumbnail lock released.")
-            sys.stdout.flush() 
+            sys.stdout.flush()
+            # --- NEW: Set status to idle ---
+            if THUMBNAIL_STATUS["status"] != "error":
+                THUMBNAIL_STATUS.update({
+                    "status": "idle",
+                    "message": f"Successfully generated {generated_count} thumbnails.",
+                    "progress": 0,
+                    "total": 0
+                })
+            # --- END NEW ---
 
 
 ## --- Initialization Function ---
@@ -827,17 +887,29 @@ def generate_missing_thumbnails_route():
     Triggers a background task to generate missing thumbnails.
     Returns immediately and does not wait for the task to finish.
     """
+    global THUMBNAIL_STATUS
+    
     # Check if the task is already running by trying to acquire the lock
     if not thumbnail_generation_lock.acquire(blocking=False):
         print("API: Thumbnail generation already in progress.")
         sys.stdout.flush() 
-        # 409 Conflict: The task is already running.
-        return jsonify({"error": "Thumbnail generation is already in progress."}), 409
+        # 200 OK: Tell the frontend "it's already running, start polling"
+        return jsonify({"message": "Thumbnail generation is already in progress."}), 200
     
     # If lock is acquired, start the background thread
     try:
         print("API: Starting background thumbnail generation thread...")
-        sys.stdout.flush() 
+        sys.stdout.flush()
+        
+        # --- NEW: Reset status for a new job ---
+        THUMBNAIL_STATUS.update({
+            "status": "starting",
+            "message": "Initializing task...",
+            "progress": 0,
+            "total": 0
+        })
+        # --- END NEW ---
+
         thread = threading.Thread(target=_generate_thumbnails_task)
         thread.start()
         
@@ -848,7 +920,16 @@ def generate_missing_thumbnails_route():
         thumbnail_generation_lock.release()
         print(f"API: Failed to start background thumbnail task: {str(e)}")
         sys.stdout.flush() 
+        THUMBNAIL_STATUS.update({"status": "error", "message": str(e)})
         return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
+
+@app.route('/api/thumbnails/status', methods=['GET'])
+def get_thumbnail_status():
+    """
+    Returns the current status of the thumbnail generation task.
+    """
+    global THUMBNAIL_STATUS
+    return jsonify(THUMBNAIL_STATUS)
 
 
 ## --- Main Execution ---
