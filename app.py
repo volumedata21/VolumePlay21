@@ -42,7 +42,6 @@ class Video(db.Model):
     video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
     thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
     subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
-    # NEW: Add columns for subtitle label and lang code
     subtitle_label = db.Column(db.String(50), nullable=True)   # e.g., "English" or "CC On"
     subtitle_lang = db.Column(db.String(10), nullable=True)    # e.g., "en"
     aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
@@ -50,9 +49,14 @@ class Video(db.Model):
     youtube_id = db.Column(db.String(100), nullable=True)      # NEW: From NFO <uniqueid>
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
-    # NEW: History fields
     last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
     watched_duration = db.Column(db.Integer, default=0) # Stored in seconds
+
+    # --- NEW FIELDS FOR "MORE INFO" ---
+    filename = db.Column(db.String(500), nullable=True)        # The video's filename (e.g., "video.mp4")
+    file_size = db.Column(db.BigInteger, nullable=True)        # Filesize in bytes
+    file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
+    has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
 
     def to_dict(self):
         """
@@ -60,6 +64,7 @@ class Video(db.Model):
         to minimize frontend changes.
         """
         # Calculate relative path for folder view
+        relative_dir = '.'
         try:
             if not isinstance(self.video_path, str):
                 self.video_path = str(self.video_path)
@@ -81,22 +86,18 @@ class Video(db.Model):
             'title': self.title,
             'summary': self.summary,
             'author': self.show_title or 'Unknown Show',  # Map show_title -> author
-            # 'published' is the NFO <aired> date (with fallback)
             'published': self.aired.isoformat() if self.aired else (self.uploaded_date.isoformat() if self.uploaded_date else datetime.datetime.now().isoformat()),
-            # 'aired_date' is *only* the NFO <aired> date (no fallback)
             'aired_date': self.aired.isoformat() if self.aired else None,
-            # 'uploaded' is the file modification time
             'uploaded': self.uploaded_date.isoformat() if self.uploaded_date else datetime.datetime.now().isoformat(),
             'is_favorite': self.is_favorite,
             'is_read_later': self.is_watch_later, # Map is_watch_later -> is_read_later
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
-            # NEW: Pass subtitle URL, label, and lang
             'subtitle_url': f'/api/subtitle/{self.id}' if self.subtitle_path else None,
             'subtitle_label': self.subtitle_label or 'Subtitles',
             'subtitle_lang': self.subtitle_lang or 'en',
-            'youtube_id': self.youtube_id, # NEW: Pass the YouTube ID
+            'youtube_id': self.youtube_id,
             
             'feed_title': self.show_title or 'Local Media',
             'feed_id': self.id, 
@@ -104,9 +105,17 @@ class Video(db.Model):
             
             'relative_path': relative_dir,
             
-            # NEW: Include history fields in the dictionary
             'last_watched': self.last_watched.isoformat() if self.last_watched else None,
-            'watched_duration': self.watched_duration
+            'watched_duration': self.watched_duration,
+
+            # --- NEW FIELDS FOR "MORE INFO" ---
+            'filename': self.filename,
+            'file_size': self.file_size,
+            'file_format': self.file_format.upper() if self.file_format else 'Unknown',
+            'has_nfo': self.has_nfo,
+            # We can re-use existing data for the "Associated Files" list
+            'has_thumbnail': bool(self.thumbnail_path),
+            'has_subtitle': bool(self.subtitle_path),
         }
 
 # SmartPlaylist Model
@@ -147,24 +156,34 @@ def scan_videos():
             if file_ext not in video_extensions:
                 continue
 
-            # This is the video file we found, e.g., "My Video.mp4"
+            # --- GATHER ALL FILE INFO ---
             video_file_path = os.path.normpath(os.path.join(dirpath, filename))
-            # Base filename, e.g., "My Video"
             video_base_filename = os.path.splitext(filename)[0]
-            # Full video filename, e.g., "My Video.mp4"
             video_full_filename = filename
             
-            # --- START: New Logic for Labels ---
+            # Get file info (fast)
+            try:
+                file_size_bytes = os.path.getsize(video_file_path)
+                mtime = os.path.getmtime(video_file_path)
+                uploaded_date = datetime.datetime.fromtimestamp(mtime)
+            except OSError as e:
+                print(f"  - Skipping {filename} (OS Error): {e}")
+                continue # Skip this file if we can't even get its size/mtime
+
+            file_format_str = file_ext.replace('.', '')
+            
+            nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
+            has_nfo_file = os.path.exists(nfo_path)
+
+            # --- START: Find Subtitles ---
             srt_path = None
             srt_label = None
             srt_lang = None
 
-            # Find all potential srt files for this video
             found_srts = []
             for srt_filename in filenames:
                 if not srt_filename.endswith('.srt'):
                     continue
-
                 lang_code = None
                 
                 # Pattern 1: Matches "My Video.mp4.en.srt"
@@ -172,7 +191,6 @@ def scan_videos():
                     suffix = srt_filename[len(video_full_filename):-4] # e.g., ".en"
                     if suffix.startswith('.'):
                         lang_code = suffix[1:] # e.g., "en"
-                
                 # Pattern 2: Matches "My Video.en.srt"
                 elif srt_filename.startswith(video_base_filename):
                     suffix = srt_filename[len(video_base_filename):-4] # e.g., ".en" or ""
@@ -187,33 +205,26 @@ def scan_videos():
                         "path": os.path.normpath(os.path.join(dirpath, srt_filename))
                     })
 
-            # Now, pick the *best* one from the list
             if found_srts:
                 best_track = None
-                
-                # Priority 1: Try to find an "en" track
-                # This will match ".en.srt", ".mp4.en.srt", ".srt", ".mp4.srt"
                 en_track = next((t for t in found_srts if t['lang'] == 'en'), None)
                 
                 if en_track:
                     best_track = en_track
                     srt_lang = "en"
-                    # Check if the path ends in ".en.srt" to decide the label
                     if en_track['path'].endswith('.en.srt'):
                         srt_label = "English"
                     else:
                         srt_label = "CC On" # It was ".srt" or ".mp4.srt"
                 else:
-                    # No "en" track, just grab the first one found
                     best_track = found_srts[0]
                     srt_lang = best_track['lang'].split('.')[0] # "es" from "es.forced"
                     srt_label = srt_lang.capitalize()
                 
                 srt_path = best_track['path']
-            # --- END: New Logic for Labels ---
+            # --- END: Find Subtitles ---
 
-            nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
-
+            # --- START: Find Thumbnail ---
             thumbnail_file_path = None
             for img_ext in image_extensions:
                 potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
@@ -230,15 +241,16 @@ def scan_videos():
                             break
                     if thumbnail_file_path:
                         break
+            # --- END: Find Thumbnail ---
 
+            # --- START: Parse NFO ---
             title = None
             show_title = None
             plot = None
             aired_date = None
-            uploaded_date = None 
             youtube_id = None 
 
-            if os.path.exists(nfo_path):
+            if has_nfo_file:
                 try:
                     tree = ET.parse(nfo_path)
                     root = tree.getroot()
@@ -263,28 +275,21 @@ def scan_videos():
             if not title:
                 title = video_base_filename.replace('.', ' ')
             if not show_title:
-                # Calculate show_title relative to the video_dir base path
                 current_dir = os.path.dirname(video_file_path)
                 relative_path_segment = os.path.relpath(current_dir, video_dir)
                 
                 if relative_path_segment == '.':
                     show_title = "Unknown Show"
                 else:
-                    # Use the last folder name as the show title
                     show_title = os.path.basename(relative_path_segment) 
             
-            try:
-                mtime = os.path.getmtime(video_file_path)
-                uploaded_date = datetime.datetime.fromtimestamp(mtime)
-            except OSError:
-                pass
-
             if not aired_date:
-                aired_date = uploaded_date
-
+                aired_date = uploaded_date # Fallback to file mtime
             if not plot:
                 plot = ""
+            # --- END: Parse NFO ---
 
+            # --- START: Database Update ---
             try:
                 existing_video = Video.query.filter_by(video_path=video_file_path).first()
                 
@@ -297,8 +302,13 @@ def scan_videos():
                     existing_video.youtube_id = youtube_id
                     existing_video.thumbnail_path = thumbnail_file_path
                     existing_video.subtitle_path = srt_path
-                    existing_video.subtitle_label = srt_label # NEW
-                    existing_video.subtitle_lang = srt_lang # NEW
+                    existing_video.subtitle_label = srt_label
+                    existing_video.subtitle_lang = srt_lang
+                    # Update new fields
+                    existing_video.filename = filename
+                    existing_video.file_size = file_size_bytes
+                    existing_video.file_format = file_format_str
+                    existing_video.has_nfo = has_nfo_file
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -311,8 +321,13 @@ def scan_videos():
                         video_path=video_file_path,
                         thumbnail_path=thumbnail_file_path,
                         subtitle_path=srt_path,
-                        subtitle_label=srt_label, # NEW
-                        subtitle_lang=srt_lang # NEW
+                        subtitle_label=srt_label,
+                        subtitle_lang=srt_lang,
+                        # Add new fields
+                        filename=filename,
+                        file_size=file_size_bytes,
+                        file_format=file_format_str,
+                        has_nfo=has_nfo_file
                     )
                     db.session.add(new_video)
                     added_count += 1
@@ -320,6 +335,7 @@ def scan_videos():
             except Exception as e:
                 print(f"  - DB Error processing {video_file_path}: {e}")
                 db.session.rollback()
+            # --- END: Database Update ---
 
     if added_count > 0 or updated_count > 0:
         db.session.commit()

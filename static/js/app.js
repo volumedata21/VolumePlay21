@@ -8,6 +8,7 @@ function videoApp() {
         isModalOpen: false,
         isScanning: false,
         isAutoplayEnabled: true, // NEW: Autoplay state (default on)
+        isInfoPanelOpen: false, // NEW: For the "More Info" panel
         // currentView is locally shadowed for reactive use in the component
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
@@ -539,6 +540,7 @@ function videoApp() {
         openModal(video) {
             this.modalVideo = video;
             this.isModalOpen = true;
+            this.isInfoPanelOpen = false; // NEW: Reset panel on open
 
             this.$nextTick(() => {
                 if (this.$refs.videoPlayer) {
@@ -569,6 +571,7 @@ function videoApp() {
             // CRITICAL: Stop video playback and save progress
             this.stopAndSaveVideo();
 
+            this.isInfoPanelOpen = false; // NEW: Reset panel on close
             this.isModalOpen = false;
             this.modalVideo = null;
         },
@@ -689,6 +692,15 @@ function videoApp() {
                 }
             }
             return 'just now';
+        },
+
+        // NEW: Helper function for "More Info" panel
+        formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         },
 
         toggleFolder(path) {
