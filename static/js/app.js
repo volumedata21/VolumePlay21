@@ -7,8 +7,8 @@ function videoApp() {
         isMobileMenuOpen: false,
         isModalOpen: false,
         isScanning: false,
-        isAutoplayEnabled: true, // NEW: Autoplay state (default on)
-        isInfoPanelOpen: false, // NEW: For the "More Info" panel
+        isAutoplayEnabled: true,
+        isInfoPanelOpen: false, // For the "More Info" panel
         // currentView is locally shadowed for reactive use in the component
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
@@ -31,6 +31,16 @@ function videoApp() {
             Alpine.store('globalState').openFolderPaths = [];
 
             this.fetchData();
+
+            // --- NEW: Auto-refresh every 15 minutes ---
+            // 15 * 60 * 1000 = 900,000 milliseconds
+            setInterval(() => {
+                console.log('Running quiet auto-refresh for new videos...');
+                // We call this with `true` to make it a "quiet" scan,
+                // so the user doesn't see the spinning refresh icon.
+                this.scanVideoLibrary(true);
+            }, 900000); 
+            // --- END NEW ---
         },
 
         async fetchData() {
