@@ -7,6 +7,7 @@ function videoApp() {
         isMobileMenuOpen: false,
         isModalOpen: false,
         isScanning: false,
+        isGeneratingThumbnails: false, // NEW: For the thumbnail button
         isAutoplayEnabled: true, // NEW: Autoplay state (default on)
         isInfoPanelOpen: false, // NEW: For the "More Info" panel
         currentPlaybackSpeed: 1.0,
@@ -813,6 +814,30 @@ function videoApp() {
             } catch (e) {
                 video.is_read_later = originalState;
                 console.error('Bookmark toggle failed:', e);
+            }
+        },
+
+        // NEW: Function to call the background thumbnail generator
+        async generateMissingThumbnails() {
+            if (this.isGeneratingThumbnails) return; // Prevent double-clicks
+
+            this.isGeneratingThumbnails = true;
+            try {
+                // This API endpoint MUST be configured on your backend to run as a background task
+                // and return a 200/202 response immediately.
+                const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
+                
+                if (!response.ok) {
+                     const result = await response.json();
+                     console.error('Failed to start thumbnail generation:', result.error);
+                }
+                // If OK, the backend has acknowledged the task.
+                
+            } catch (e) {
+                console.error('Error starting thumbnail generation:', e);
+            } finally {
+                 // Reset button after 2s so user sees feedback
+                 setTimeout(() => { this.isGeneratingThumbnails = false; }, 2000);
             }
         },
     };

@@ -1,6 +1,11 @@
 # Use a modern, slim Python base image
 FROM python:3.11-slim
 
+# --- NEW ---
+# Install ffmpeg for thumbnail generation and clean up apt cache
+RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && rm -rf /var/lib/apt/lists/*
+# --- END NEW ---
+
 # Set the working directory inside the container
 WORKDIR /app
 

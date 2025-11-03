@@ -3,6 +3,9 @@ import os
 import datetime
 import xml.etree.ElementTree as ET # For parsing NFO files
 import json # For handling playlist filters
+import threading # --- NEW --- For background tasks
+import subprocess # --- NEW --- For running ffmpeg
+import sys # --- NEW --- To flush print statements
 # NEW: Import Response
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
@@ -31,6 +34,9 @@ app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+
+# --- NEW --- Global lock to prevent multiple thumbnail jobs
+thumbnail_generation_lock = threading.Lock()
 
 ## --- Database Models ---
 
@@ -403,6 +409,101 @@ def srt_to_vtt(srt_content):
         # Fallback: return a valid but empty VTT
         return "WEBVTT\n\n"
 
+# --- NEW --- Background task for generating thumbnails
+def _generate_thumbnails_task():
+    """
+    This function runs in a separate thread to generate missing thumbnails.
+    It MUST be run within an app context.
+    """
+    print("Background thumbnail generation task started...")
+    sys.stdout.flush() 
+    with app.app_context(): # Need app context to access db
+        try:
+            # --- NEW: Define a writable thumbnail directory ---
+            thumb_dir = os.path.join(data_dir, 'thumbnails')
+            os.makedirs(thumb_dir, exist_ok=True) # Create it if it doesn't exist
+            # --- END NEW ---
+
+            # Find all videos where thumbnail_path is NULL
+            videos_to_process = Video.query.filter(Video.thumbnail_path == None).all()
+            print(f"Found {len(videos_to_process)} videos needing thumbnails.")
+            sys.stdout.flush() 
+            
+            generated_count = 0
+            for video in videos_to_process:
+                try:
+                    video_path = video.video_path
+                    if not os.path.exists(video_path):
+                        print(f"  - Skipping {video.filename} (source file not found at {video_path})")
+                        sys.stdout.flush() 
+                        continue
+
+                    # --- NEW: Create a safe, writable path in the /data directory ---
+                    # e.g., /data/thumbnails/14.jpg
+                    new_thumb_path = os.path.join(thumb_dir, f"{video.id}.jpg")
+                    # --- END NEW ---
+
+                    # --- FINAL FIX: Pipe output from ffmpeg, write with Python ---
+                    result = subprocess.run([
+                        "ffmpeg",
+                        "-i", video_path,
+                        "-ss", "00:00:10", # Seek 10s in
+                        "-vframes", "1",
+                        "-q:v", "2",
+                        "-f", "image2pipe", # Format as an image pipe
+                        "pipe:1"            # Output to stdout
+                    ], 
+                    check=True, 
+                    capture_output=True # Capture stdout (binary) and stderr
+                    )
+                    # --- END FIX ---
+
+                    # If ffmpeg succeeded, result.stdout will have the binary image data
+                    if result.stdout:
+                        # Use Python's open() to write the file to the NEW path
+                        with open(new_thumb_path, "wb") as f:
+                            f.write(result.stdout)
+                        
+                        # Verify the file was written by Python
+                        if os.path.exists(new_thumb_path):
+                            video.thumbnail_path = new_thumb_path # Save the new path
+                            db.session.add(video)
+                            generated_count += 1
+                            print(f"  - Generated thumbnail for: {video.filename} at {new_thumb_path}")
+                            sys.stdout.flush()
+                        else:
+                            print(f"  - FAILED to write file for: {video.filename} (Python I/O error)")
+                            sys.stdout.flush()
+                    else:
+                        print(f"  - FAILED to generate for: {video.filename} (ffmpeg ran but produced no output)")
+                        sys.stdout.flush()
+
+                except subprocess.CalledProcessError as e:
+                    # Decode stderr from bytes to string for printing
+                    stderr_output = e.stderr.decode('utf-8', errors='ignore') 
+                    print(f"  - FFmpeg error for {video.filename}: {e}")
+                    print(f"  - FFmpeg STDERR: {stderr_output}") 
+                    sys.stdout.flush() 
+                except Exception as e:
+                    print(f"  - General error processing {video.filename}: {e}")
+                    sys.stdout.flush() 
+                    db.session.rollback() # Rollback this single video's change
+            
+            if generated_count > 0:
+                db.session.commit() # Commit all successful updates at the end
+            print(f"Thumbnail generation task finished. Generated {generated_count} new thumbnails.")
+            sys.stdout.flush() 
+
+        except Exception as e:
+            print(f"Fatal error in thumbnail task: {e}")
+            sys.stdout.flush() 
+            db.session.rollback()
+        finally:
+            # CRITICAL: Release the lock so the task can be run again later
+            thumbnail_generation_lock.release()
+            print("Thumbnail lock released.")
+            sys.stdout.flush() 
+
 
 ## --- Initialization Function ---
 def initialize_database():
@@ -717,6 +818,36 @@ def scan_videos_route():
         print(f"Error during scan: {e}")
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
+
+# --- NEW --- API to generate missing thumbnails in the background
+@app.route('/api/thumbnails/generate_missing', methods=['POST'])
+def generate_missing_thumbnails_route():
+    """
+    Triggers a background task to generate missing thumbnails.
+    Returns immediately and does not wait for the task to finish.
+    """
+    # Check if the task is already running by trying to acquire the lock
+    if not thumbnail_generation_lock.acquire(blocking=False):
+        print("API: Thumbnail generation already in progress.")
+        sys.stdout.flush() 
+        # 409 Conflict: The task is already running.
+        return jsonify({"error": "Thumbnail generation is already in progress."}), 409
+    
+    # If lock is acquired, start the background thread
+    try:
+        print("API: Starting background thumbnail generation thread...")
+        sys.stdout.flush() 
+        thread = threading.Thread(target=_generate_thumbnails_task)
+        thread.start()
+        
+        # 202 Accepted: The request has been accepted for processing.
+        return jsonify({"message": "Thumbnail generation started in background."}), 202
+    except Exception as e:
+        # If starting the thread fails, release the lock
+        thumbnail_generation_lock.release()
+        print(f"API: Failed to start background thumbnail task: {str(e)}")
+        sys.stdout.flush() 
+        return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
 
 
 ## --- Main Execution ---
