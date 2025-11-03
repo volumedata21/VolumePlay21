@@ -3,7 +3,8 @@ import os
 import datetime
 import xml.etree.ElementTree as ET # For parsing NFO files
 import json # For handling playlist filters
-from flask import Flask, render_template, request, jsonify, send_from_directory
+# NEW: Import Response
+from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
 import mimetypes
@@ -40,6 +41,8 @@ class Video(db.Model):
     summary = db.Column(db.Text)                               # From NFO <plot>
     video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
     thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
+    # NEW: Store path to subtitle file
+    subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
     aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
     uploaded_date = db.Column(db.DateTime(timezone=False))     # NEW: From file mtime
     youtube_id = db.Column(db.String(100), nullable=True)      # NEW: From NFO <uniqueid>
@@ -87,6 +90,8 @@ class Video(db.Model):
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
+            # NEW: Add a URL for the subtitle file if it exists
+            'subtitle_url': f'/api/subtitle/{self.id}' if self.subtitle_path else None,
             'youtube_id': self.youtube_id, # NEW: Pass the YouTube ID
             
             'feed_title': self.show_title or 'Local Media',
@@ -122,7 +127,7 @@ class SmartPlaylist(db.Model):
 def scan_videos():
     """
     Scans the VIDEO_DIR for video files, *then* looks for optional
-    .nfo and thumbnail files. Creates fallbacks if metadata is missing.
+    .nfo, .srt, and thumbnail files. Creates fallbacks if metadata is missing.
     """
     print(f"Starting scan of: {video_dir}")
     added_count = 0
@@ -143,6 +148,35 @@ def scan_videos():
             
             nfo_path = os.path.normpath(os.path.join(dirpath, base_filename + '.nfo'))
             
+            # --- START: Updated Subtitle Logic ---
+            # NEW: Look for .srt file (updated logic)
+            srt_path = None
+            
+            # Priority 1: Check for .en.srt (user's specific case)
+            potential_en_srt = os.path.normpath(os.path.join(dirpath, base_filename + '.en.srt'))
+            if os.path.exists(potential_en_srt):
+                srt_path = potential_en_srt
+            
+            # Priority 2: Check for simple .srt
+            if not srt_path:
+                potential_srt = os.path.normpath(os.path.join(dirpath, base_filename + '.srt'))
+                if os.path.exists(potential_srt):
+                    srt_path = potential_srt
+            
+            # Priority 3: Scan for *any* other [base_filename].*.srt
+            if not srt_path:
+                # `filenames` is the list of all files in the current `dirpath`
+                for srt_filename in filenames:
+                    if srt_filename.startswith(base_filename) and srt_filename.endswith('.srt'):
+                        # Check that the part *after* the base_filename starts with a dot
+                        # This avoids matching "video_extra.srt" for base "video"
+                        suffix = srt_filename[len(base_filename):]
+                        if suffix.startswith('.'):
+                            # Matches ".es.srt", ".fr.srt", etc.
+                            srt_path = os.path.normpath(os.path.join(dirpath, srt_filename))
+                            break # Found one, stop looking
+            # --- END: Updated Subtitle Logic ---
+
             thumbnail_file_path = None
             for img_ext in image_extensions:
                 potential_thumb = os.path.normpath(os.path.join(dirpath, base_filename + img_ext))
@@ -225,6 +259,7 @@ def scan_videos():
                     existing_video.uploaded_date = uploaded_date 
                     existing_video.youtube_id = youtube_id
                     existing_video.thumbnail_path = thumbnail_file_path
+                    existing_video.subtitle_path = srt_path # NEW: Update subtitle path
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -235,7 +270,8 @@ def scan_videos():
                         uploaded_date=uploaded_date, 
                         youtube_id=youtube_id,
                         video_path=video_file_path,
-                        thumbnail_path=thumbnail_file_path
+                        thumbnail_path=thumbnail_file_path,
+                        subtitle_path=srt_path # NEW: Add subtitle path
                     )
                     db.session.add(new_video)
                     added_count += 1
@@ -266,6 +302,48 @@ def build_folder_tree(paths):
             if part: 
                 current_level = current_level.setdefault(part, {})
     return tree
+
+# --- NEW: Helper function to convert SRT to WebVTT ---
+def srt_to_vtt(srt_content):
+    """
+    Converts SRT content (string) to WebVTT content (string).
+    - Replaces comma timestamps with periods.
+    - Removes numeric cues.
+    - Adds WEBVTT header.
+    """
+    try:
+        lines = srt_content.strip().split('\n')
+        vtt_lines = ["WEBVTT", ""]
+        
+        i = 0
+        while i < len(lines):
+            # Check if line is a numeric cue index
+            if lines[i].isdigit():
+                i += 1
+                # Check for end of file
+                if i >= len(lines):
+                    continue
+
+            # Process timestamp (e.g., 00:00:00,440 --> 00:00:07,829)
+            if '-->' in lines[i]:
+                timestamp = lines[i].replace(',', '.')
+                vtt_lines.append(timestamp)
+                i += 1
+            
+            # Process text lines
+            while i < len(lines) and lines[i].strip() != '':
+                vtt_lines.append(lines[i])
+                i += 1
+            
+            # Add blank line between cues
+            vtt_lines.append("")
+            i += 1
+            
+        return "\n".join(vtt_lines)
+    except Exception as e:
+        print(f"Error converting SRT to VTT: {e}")
+        # Fallback: return a valid but empty VTT
+        return "WEBVTT\n\n"
 
 
 ## --- Initialization Function ---
@@ -386,7 +464,7 @@ def add_playlist_filter(playlist_id):
                 found_duplicate = True
                 break
         
-        # 3. If a duplicate is found, just return the playlist as-is.
+        # 3. If a-duplicate is found, just return the playlist as-is.
         if found_duplicate:
             return jsonify(playlist.to_dict()), 200
 
@@ -480,6 +558,44 @@ def get_thumbnail(video_id):
     thumb_filename = os.path.basename(video.thumbnail_path)
     mimetype = mimetypes.guess_type(video.thumbnail_path)[0] or 'image/jpeg'
     return send_from_directory(thumb_dir, thumb_filename, as_attachment=False, mimetype=mimetype)
+
+# --- UPDATED: API Route for Subtitles ---
+@app.route('/api/subtitle/<int:video_id>')
+def get_subtitle(video_id):
+    """
+    Serves the subtitle file, converting it from SRT to VTT on-the-fly.
+    """
+    video = Video.query.get_or_404(video_id)
+    if not video.subtitle_path or not os.path.exists(video.subtitle_path):
+        return jsonify({"error": "Subtitle file not found"}), 404
+    
+    srt_content = ""
+    try:
+        # Try reading as UTF-8 first
+        with open(video.subtitle_path, 'r', encoding='utf-8') as f:
+            srt_content = f.read()
+    except UnicodeDecodeError:
+        try:
+            # Fallback to latin-1 (common for older SRT files)
+            with open(video.subtitle_path, 'r', encoding='latin-1') as f:
+                srt_content = f.read()
+        except Exception as e:
+            print(f"Failed to read subtitle file {video.subtitle_path}: {e}")
+            return jsonify({"error": "Could not read subtitle file"}), 500
+    except Exception as e:
+        print(f"Failed to read subtitle file {video.subtitle_path}: {e}")
+        return jsonify({"error": "Could not read subtitle file"}), 500
+
+    # Convert the SRT content to VTT
+    vtt_content = srt_to_vtt(srt_content)
+    
+    # Create a Flask Response object
+    response = Response(vtt_content, mimetype='text/vtt; charset=utf-8')
+    
+    # ADDED: Add CORS header to allow the video player to load it
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    
+    return response
 
 
 ## --- API: Video Actions (Favorites/Watch Later/Progress) ---

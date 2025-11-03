@@ -465,7 +465,12 @@
 
                     <div class="p-0 bg-black">
                         <video x-if="modalVideo" class="w-full max-h-[80vh] h-auto" :src="modalVideo.video_url" controls
-                            autoplay @ended="handleVideoEnd()" x-ref="videoPlayer">
+                            autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous">
+                            
+                            <template x-if="modalVideo.subtitle_url">
+                                <track label="Subtitles" kind="subtitles" :src="modalVideo.subtitle_url" srclang="en">
+                            </template>
+
                             Your browser does not support the video tag.
                         </video>
                     </div>
