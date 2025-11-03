@@ -667,23 +667,36 @@ function videoApp() {
             return doc.documentElement.textContent;
         },
 
+        // --- MODIFIED FUNCTION ---
         formatVideoDescription(text) {
             if (!text) return 'No summary available.';
 
             let cleanText = this.unescapeHTML(text);
 
+            // Define all regex patterns
             const urlRegex = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
             const atRegex = /@([\w\d_.-]+)/g;
             const hashRegex = /#([\w\d_.-]+)/g;
+            
+            // This regex looks for a timestamp that is EITHER at the start of the string OR preceded by whitespace.
+            // It captures the whitespace (or start) in $1, and the timestamp in $2.
+            // Handles formats like H:MM:SS, HH:MM:SS, M:SS, or MM:SS
+            const timecodeRegex = /(^|\s)((?:(?:\d{1,2}):)?\d{1,2}:\d{2})\b/g;
 
+            // Run replacements. Timecode FIRST, to avoid conflicts with other link types.
             let formattedText = cleanText
+                .replace(timecodeRegex, (match, p1, p2) => {
+                    // p1 is the whitespace/start, p2 is the timecode
+                    return `${p1}<a href="#" onclick="seekVideo(event, '${p2}')" class="text-[var(--text-highlight)] hover:underline font-semibold" title="Seek to ${p2}">${p2}</a>`;
+                })
                 .replace(urlRegex, (url) => `<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)
                 .replace(atRegex, (match, username) => `<a href="https://www.youtube.com/@${username}" target="_blank" rel="noopener noreferrer">${match}</a>`)
                 .replace(hashRegex, (match, tag) => `<a href="https://www.youtube.com/hashtag/${tag}" target="_blank" rel="noopener noreferrer">${match}</a>`)
-                .replace(/\n/g, '<br>');
+                .replace(/\n/g, '<br>'); // Newlines last
 
             return formattedText;
         },
+        // --- END MODIFIED FUNCTION ---
 
         formatDateAgo(publishedDateISO, uploadedDateISO) {
             if (!publishedDateISO && !uploadedDateISO) return '';
@@ -832,6 +845,7 @@ function videoApp() {
                      console.error('Failed to start thumbnail generation:', result.error);
                 }
                 // If OK, the backend has acknowledged the task.
+                // The user should click the main refresh button to see updates.
                 
             } catch (e) {
                 console.error('Error starting thumbnail generation:', e);
@@ -842,6 +856,50 @@ function videoApp() {
         },
     };
 }
+
+// --- NEW HELPER FUNCTION ---
+/**
+ * Globally accessible function to seek the main video player.
+ * @param {Event} event - The click event, to prevent default link behavior.
+ * @param {string} timestampString - The timestamp (e.g., "0:10:26" or "10:26").
+ */
+function seekVideo(event, timestampString) {
+    // Prevent the <a> tag's default behavior (jumping to top of page)
+    event.preventDefault();
+    
+    // Use the ID you added to your HTML
+    const player = document.getElementById('main-video-player');
+    if (!player) {
+        console.error('Video player element not found.');
+        return;
+    }
+
+    // Split the timestamp into parts (e.g., ["0", "10", "26"] or ["10", "26"])
+    const parts = timestampString.split(':').map(Number);
+    let seconds = 0;
+
+    try {
+        if (parts.length === 3) {
+            // Format: H:MM:SS
+            seconds = (parts[0] * 3600) + (parts[1] * 60) + parts[2];
+        } else if (parts.length === 2) {
+            // Format: M:SS or MM:SS
+            seconds = (parts[0] * 60) + parts[1];
+        } else {
+            console.warn('Unrecognized timestamp format:', timestampString);
+            return;
+        }
+
+        // Set the player's time and ensure it's playing
+        player.currentTime = seconds;
+        player.play();
+
+    } catch (e) {
+        console.error('Error parsing timestamp:', timestampString, e);
+    }
+}
+// --- END NEW HELPER FUNCTION ---
+
 
 /**
  * UPDATED: Alpine.js component for managing the filter selection and application.

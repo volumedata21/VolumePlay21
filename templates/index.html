@@ -288,8 +288,7 @@
                             <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
                                 draggable="true"
                                 class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                x-text="tag"
-                                :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
+                                x-text="tag" :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
                             </a>
                         </template>
                         <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
@@ -308,12 +307,13 @@
                 <div class="pt-2 px-4 pb-4" x-cloak>
                     <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Library Tools</h3>
                     <button @click="generateMissingThumbnails()" :disabled="isGeneratingThumbnails"
-                        class="w-full flex items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-highlight)]/50 text-[var(--text-highlight)] hover:bg-[var(--bg-highlight)]/80 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isGeneratingThumbnails }">auto_awesome</i>
+                        class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="material-icons" style="font-size:20px;"
+                            :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
                         <span x-text="isGeneratingThumbnails ? 'Starting...' : 'Gen. Missing Thumbs'"></span>
                     </button>
                 </div>
-                </nav>
+            </nav>
         </aside>
 
         <main class="flex-1 overflow-y-auto lg:pl-72">
@@ -480,11 +480,13 @@
                 <div>
 
                     <div class="p-0 bg-black">
-                        <video x-if="modalVideo" class="w-full max-h-[80vh] h-auto" :src="modalVideo.video_url" controls
-                            autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous">
-                            
+                        <video x-if="modalVideo" id="main-video-player" class="w-full max-h-[80vh] h-auto"
+                            :src="modalVideo.video_url" controls autoplay @ended="handleVideoEnd()" x-ref="videoPlayer"
+                            crossorigin="anonymous">
+
                             <template x-if="modalVideo.subtitle_url">
-                                <track :label="modalVideo.subtitle_label" kind="subtitles" :src="modalVideo.subtitle_url" :srclang="modalVideo.subtitle_lang">
+                                <track :label="modalVideo.subtitle_label" kind="subtitles"
+                                    :src="modalVideo.subtitle_url" :srclang="modalVideo.subtitle_lang">
                             </template>
 
                             Your browser does not support the video tag.
@@ -492,7 +494,7 @@
                     </div>
 
                     <div class="p-4 sm:p-5">
-                        
+
                         <div class="lg:flex lg:gap-x-8">
 
                             <div class="lg:w-2/3">
@@ -509,8 +511,7 @@
 
                                 <div class="mt-4 border-t border-[var(--divider-color)] pt-4">
                                     <h2 class="text-2xl font-bold text-[var(--text-bright)] tracking-tight leading-tight"
-                                        style="text-wrap: balance;"
-                                        x-text="modalVideo.title">
+                                        style="text-wrap: balance;" x-text="modalVideo.title">
                                     </h2>
                                 </div>
 
@@ -524,22 +525,22 @@
                                         x-html="formatVideoDescription(modalVideo.summary || 'No summary available.')">
                                     </div>
                                 </div>
-                                
-                                <div x-show="isInfoPanelOpen" 
-                                     x-transition:enter="transition ease-out duration-200"
-                                     x-transition:enter-start="opacity-0 -translate-y-2"
-                                     x-transition:enter-end="opacity-100 translate-y-0"
-                                     x-transition:leave="transition ease-in duration-150"
-                                     x-transition:leave-start="opacity-100 translate-y-0"
-                                     x-transition:leave-end="opacity-0 -translate-y-2"
-                                     class="mt-4 border-t border-[var(--divider-color)] pt-4 text-[var(--text-main)]" x-cloak>
-                                    
+
+                                <div x-show="isInfoPanelOpen" x-transition:enter="transition ease-out duration-200"
+                                    x-transition:enter-start="opacity-0 -translate-y-2"
+                                    x-transition:enter-end="opacity-100 translate-y-0"
+                                    x-transition:leave="transition ease-in duration-150"
+                                    x-transition:leave-start="opacity-100 translate-y-0"
+                                    x-transition:leave-end="opacity-0 -translate-y-2"
+                                    class="mt-4 border-t border-[var(--divider-color)] pt-4 text-[var(--text-main)]"
+                                    x-cloak>
+
                                     <div class="prose prose-sm prose-invert max-w-none space-y-3">
                                         <div>
                                             <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Filename</h4>
                                             <p class="!mt-0.5 break-words" x-text="modalVideo.filename"></p>
                                         </div>
-                                        
+
                                         <div>
                                             <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Path</h4>
                                             <p class="!mt-0.5 break-words" x-text="modalVideo.relative_path"></p>
@@ -547,7 +548,8 @@
 
                                         <div class="grid grid-cols-2 gap-x-4">
                                             <div>
-                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">File Size</h4>
+                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">File Size
+                                                </h4>
                                                 <p class="!mt-0.5" x-text="formatFileSize(modalVideo.file_size)"></p>
                                             </div>
                                             <div>
@@ -557,27 +559,32 @@
                                         </div>
 
                                         <div>
-                                            <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files</h4>
+                                            <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files
+                                            </h4>
                                             <div class="!mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
                                                 <span class="inline-flex items-center gap-1">
-                                                    <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">videocam</i>
+                                                    <i class="material-icons text-[var(--text-highlight)]"
+                                                        style="font-size: 16px;">videocam</i>
                                                     <span x-text="modalVideo.file_format"></span>
                                                 </span>
                                                 <template x-if="modalVideo.has_subtitle">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">subtitles</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]"
+                                                            style="font-size: 16px;">subtitles</i>
                                                         <span>SRT</span>
                                                     </span>
                                                 </template>
                                                 <template x-if="modalVideo.has_thumbnail">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">image</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]"
+                                                            style="font-size: 16px;">image</i>
                                                         <span>JPG</span>
                                                     </span>
                                                 </template>
                                                 <template x-if="modalVideo.has_nfo">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">description</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]"
+                                                            style="font-size: 16px;">description</i>
                                                         <span>NFO</span>
                                                     </span>
                                                 </template>
@@ -589,17 +596,16 @@
                             </div>
 
                             <div class="lg:w-1/3 mt-4 lg:mt-0">
-                                
+
                                 <div class="grid grid-cols-2 gap-2">
 
-                                    <button 
+                                    <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md bg-[var(--bg-darkest)] hover:bg-[var(--divider-color)] transition-colors text-sm"
                                         @click.prevent="toggleFavorite(modalVideo)"
                                         :class="modalVideo.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'">
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
-                                        <span
-                                            x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
+                                        <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
                                     </button>
 
                                     <button
@@ -608,12 +614,12 @@
                                         :class="modalVideo.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'">
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i>
-                                        <span
-                                            x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
+                                        <span x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
                                     </button>
 
                                     <template x-if="modalVideo.youtube_id">
-                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank"
+                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
+                                            target="_blank"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md bg-[var(--bg-darkest)] hover:bg-[var(--divider-color)] transition-colors text-sm text-[var(--text-secondary)] yt-icon"
                                             title="Watch on YouTube">
                                             <i class="material-icons" style="font-size: 20px;">smart_display</i>
@@ -631,14 +637,14 @@
                                     <button @click="isInfoPanelOpen = !isInfoPanelOpen"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md bg-[var(--bg-darkest)] hover:bg-[var(--divider-color)] transition-colors text-sm text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
                                         title="Show file details">
-                                        <i class="material-icons" style="font-size: 20px;" x-text="isInfoPanelOpen ? 'info' : 'info_outline'"></i>
+                                        <i class="material-icons" style="font-size: 20px;"
+                                            x-text="isInfoPanelOpen ? 'info' : 'info_outline'"></i>
                                         <span>More Info</span>
                                     </button>
 
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md bg-[var(--bg-darkest)] hover:bg-[var(--divider-color)] transition-colors text-sm text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
-                                        @click.prevent="cyclePlaybackSpeed()"
-                                        title="Change Playback Speed">
+                                        @click.prevent="cyclePlaybackSpeed()" title="Change Playback Speed">
                                         <i class="material-icons" style="font-size: 20px;">speed</i>
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>

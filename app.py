@@ -306,11 +306,12 @@ def scan_videos():
                     existing_video.aired = aired_date
                     existing_video.uploaded_date = uploaded_date 
                     existing_video.youtube_id = youtube_id
-                    existing_video.thumbnail_path = thumbnail_file_path
+                    
+                if thumbnail_file_path:
+                    existing_video.thumbnail_path = thumbnail_file_path                    
                     existing_video.subtitle_path = srt_path
                     existing_video.subtitle_label = srt_label
                     existing_video.subtitle_lang = srt_lang
-                    # Update new fields
                     existing_video.filename = filename
                     existing_video.file_size = file_size_bytes
                     existing_video.file_format = file_format_str
