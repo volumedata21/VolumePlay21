@@ -9,6 +9,8 @@ function videoApp() {
         isScanning: false,
         isAutoplayEnabled: true, // NEW: Autoplay state (default on)
         isInfoPanelOpen: false, // NEW: For the "More Info" panel
+        currentPlaybackSpeed: 1.0,
+        playbackRates: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
         // currentView is locally shadowed for reactive use in the component
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
@@ -549,6 +551,8 @@ function videoApp() {
                     if (lastDuration > 10) {
                         this.$refs.videoPlayer.currentTime = lastDuration;
                     }
+                    // Apply the current playback speed
+                    this.$refs.videoPlayer.playbackRate = this.currentPlaybackSpeed;
                 }
             });
         },
@@ -612,6 +616,8 @@ function videoApp() {
                                 player.currentTime = 0;
                             }
                             player.play(); // Start the next video
+                            // Apply the current playback speed
+                            player.playbackRate = this.currentPlaybackSpeed;
                         }
                     });
 
@@ -625,6 +631,26 @@ function videoApp() {
             this.modalVideo = null;
         },
         // END: AUTOPLAY REFACTOR
+
+        // --- NEW: Playback Speed Controls ---
+        setPlaybackSpeed(speed) {
+            const newSpeed = parseFloat(speed);
+            if (isNaN(newSpeed)) return;
+
+            this.currentPlaybackSpeed = newSpeed;
+            if (this.$refs.videoPlayer) {
+                this.$refs.videoPlayer.playbackRate = newSpeed;
+            }
+        },
+
+        cyclePlaybackSpeed() {
+            const currentIndex = this.playbackRates.indexOf(this.currentPlaybackSpeed);
+            let nextIndex = currentIndex + 1;
+            if (nextIndex >= this.playbackRates.length) {
+                nextIndex = 0; // Loop back to the start
+            }
+            this.setPlaybackSpeed(this.playbackRates[nextIndex]);
+        },
 
         // --- Content Rendering ---
 

@@ -625,6 +625,14 @@
                                         <span>More Info</span>
                                     </button>
 
+                                    <button
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md bg-[var(--bg-darkest)] hover:bg-[var(--divider-color)] transition-colors text-sm text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
+                                        @click.prevent="cyclePlaybackSpeed()"
+                                        title="Change Playback Speed">
+                                        <i class="material-icons" style="font-size: 20px;">speed</i>
+                                        <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
+                                    </button>
+
                                 </div>
                             </div>
                         </div>
