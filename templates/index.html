@@ -468,7 +468,7 @@
                             autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous">
                             
                             <template x-if="modalVideo.subtitle_url">
-                                <track label="Subtitles" kind="subtitles" :src="modalVideo.subtitle_url" srclang="en">
+                                <track :label="modalVideo.subtitle_label" kind="subtitles" :src="modalVideo.subtitle_url" :srclang="modalVideo.subtitle_lang">
                             </template>
 
                             Your browser does not support the video tag.

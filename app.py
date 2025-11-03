@@ -41,8 +41,10 @@ class Video(db.Model):
     summary = db.Column(db.Text)                               # From NFO <plot>
     video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
     thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
-    # NEW: Store path to subtitle file
     subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
+    # NEW: Add columns for subtitle label and lang code
+    subtitle_label = db.Column(db.String(50), nullable=True)   # e.g., "English" or "CC On"
+    subtitle_lang = db.Column(db.String(10), nullable=True)    # e.g., "en"
     aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
     uploaded_date = db.Column(db.DateTime(timezone=False))     # NEW: From file mtime
     youtube_id = db.Column(db.String(100), nullable=True)      # NEW: From NFO <uniqueid>
@@ -90,8 +92,10 @@ class Video(db.Model):
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
-            # NEW: Add a URL for the subtitle file if it exists
+            # NEW: Pass subtitle URL, label, and lang
             'subtitle_url': f'/api/subtitle/{self.id}' if self.subtitle_path else None,
+            'subtitle_label': self.subtitle_label or 'Subtitles',
+            'subtitle_lang': self.subtitle_lang or 'en',
             'youtube_id': self.youtube_id, # NEW: Pass the YouTube ID
             
             'feed_title': self.show_title or 'Local Media',
@@ -143,43 +147,76 @@ def scan_videos():
             if file_ext not in video_extensions:
                 continue
 
-            base_filename = os.path.splitext(filename)[0]
+            # This is the video file we found, e.g., "My Video.mp4"
             video_file_path = os.path.normpath(os.path.join(dirpath, filename))
+            # Base filename, e.g., "My Video"
+            video_base_filename = os.path.splitext(filename)[0]
+            # Full video filename, e.g., "My Video.mp4"
+            video_full_filename = filename
             
-            nfo_path = os.path.normpath(os.path.join(dirpath, base_filename + '.nfo'))
-            
-            # --- START: Updated Subtitle Logic ---
-            # NEW: Look for .srt file (updated logic)
+            # --- START: New Logic for Labels ---
             srt_path = None
-            
-            # Priority 1: Check for .en.srt (user's specific case)
-            potential_en_srt = os.path.normpath(os.path.join(dirpath, base_filename + '.en.srt'))
-            if os.path.exists(potential_en_srt):
-                srt_path = potential_en_srt
-            
-            # Priority 2: Check for simple .srt
-            if not srt_path:
-                potential_srt = os.path.normpath(os.path.join(dirpath, base_filename + '.srt'))
-                if os.path.exists(potential_srt):
-                    srt_path = potential_srt
-            
-            # Priority 3: Scan for *any* other [base_filename].*.srt
-            if not srt_path:
-                # `filenames` is the list of all files in the current `dirpath`
-                for srt_filename in filenames:
-                    if srt_filename.startswith(base_filename) and srt_filename.endswith('.srt'):
-                        # Check that the part *after* the base_filename starts with a dot
-                        # This avoids matching "video_extra.srt" for base "video"
-                        suffix = srt_filename[len(base_filename):]
-                        if suffix.startswith('.'):
-                            # Matches ".es.srt", ".fr.srt", etc.
-                            srt_path = os.path.normpath(os.path.join(dirpath, srt_filename))
-                            break # Found one, stop looking
-            # --- END: Updated Subtitle Logic ---
+            srt_label = None
+            srt_lang = None
+
+            # Find all potential srt files for this video
+            found_srts = []
+            for srt_filename in filenames:
+                if not srt_filename.endswith('.srt'):
+                    continue
+
+                lang_code = None
+                
+                # Pattern 1: Matches "My Video.mp4.en.srt"
+                if srt_filename.startswith(video_full_filename):
+                    suffix = srt_filename[len(video_full_filename):-4] # e.g., ".en"
+                    if suffix.startswith('.'):
+                        lang_code = suffix[1:] # e.g., "en"
+                
+                # Pattern 2: Matches "My Video.en.srt"
+                elif srt_filename.startswith(video_base_filename):
+                    suffix = srt_filename[len(video_base_filename):-4] # e.g., ".en" or ""
+                    if suffix.startswith('.'):
+                        lang_code = suffix[1:] # e.g., "en"
+                    elif suffix == "":
+                        lang_code = "en" # "My Video.srt" (default to en)
+
+                if lang_code:
+                    found_srts.append({
+                        "lang": lang_code, 
+                        "path": os.path.normpath(os.path.join(dirpath, srt_filename))
+                    })
+
+            # Now, pick the *best* one from the list
+            if found_srts:
+                best_track = None
+                
+                # Priority 1: Try to find an "en" track
+                # This will match ".en.srt", ".mp4.en.srt", ".srt", ".mp4.srt"
+                en_track = next((t for t in found_srts if t['lang'] == 'en'), None)
+                
+                if en_track:
+                    best_track = en_track
+                    srt_lang = "en"
+                    # Check if the path ends in ".en.srt" to decide the label
+                    if en_track['path'].endswith('.en.srt'):
+                        srt_label = "English"
+                    else:
+                        srt_label = "CC On" # It was ".srt" or ".mp4.srt"
+                else:
+                    # No "en" track, just grab the first one found
+                    best_track = found_srts[0]
+                    srt_lang = best_track['lang'].split('.')[0] # "es" from "es.forced"
+                    srt_label = srt_lang.capitalize()
+                
+                srt_path = best_track['path']
+            # --- END: New Logic for Labels ---
+
+            nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
 
             thumbnail_file_path = None
             for img_ext in image_extensions:
-                potential_thumb = os.path.normpath(os.path.join(dirpath, base_filename + img_ext))
+                potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
                 if os.path.exists(potential_thumb):
                     thumbnail_file_path = potential_thumb
                     break
@@ -187,7 +224,7 @@ def scan_videos():
             if not thumbnail_file_path:
                 for suffix in ['-thumb', ' thumbnail', ' folder']:
                     for img_ext in image_extensions:
-                        potential_thumb = os.path.normpath(os.path.join(dirpath, base_filename + suffix + img_ext))
+                        potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + suffix + img_ext))
                         if os.path.exists(potential_thumb):
                             thumbnail_file_path = potential_thumb
                             break
@@ -224,7 +261,7 @@ def scan_videos():
                     print(f"  - Error processing {nfo_path}: {e}")
             
             if not title:
-                title = base_filename.replace('.', ' ')
+                title = video_base_filename.replace('.', ' ')
             if not show_title:
                 # Calculate show_title relative to the video_dir base path
                 current_dir = os.path.dirname(video_file_path)
@@ -259,7 +296,9 @@ def scan_videos():
                     existing_video.uploaded_date = uploaded_date 
                     existing_video.youtube_id = youtube_id
                     existing_video.thumbnail_path = thumbnail_file_path
-                    existing_video.subtitle_path = srt_path # NEW: Update subtitle path
+                    existing_video.subtitle_path = srt_path
+                    existing_video.subtitle_label = srt_label # NEW
+                    existing_video.subtitle_lang = srt_lang # NEW
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -271,7 +310,9 @@ def scan_videos():
                         youtube_id=youtube_id,
                         video_path=video_file_path,
                         thumbnail_path=thumbnail_file_path,
-                        subtitle_path=srt_path # NEW: Add subtitle path
+                        subtitle_path=srt_path,
+                        subtitle_label=srt_label, # NEW
+                        subtitle_lang=srt_lang # NEW
                     )
                     db.session.add(new_video)
                     added_count += 1
@@ -284,6 +325,7 @@ def scan_videos():
         db.session.commit()
     print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
     return added_count + updated_count
+
 
 def build_folder_tree(paths):
     """
