@@ -71,6 +71,7 @@ class Video(db.Model):
     file_size = db.Column(db.BigInteger, nullable=True)        # Filesize in bytes
     file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
     has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
+    is_short = db.Column(db.Boolean, default=False)            # True if height > width
 
     def to_dict(self):
         """
@@ -130,6 +131,7 @@ class Video(db.Model):
             # We can re-use existing data for the "Associated Files" list
             'has_thumbnail': bool(self.thumbnail_path),
             'has_subtitle': bool(self.subtitle_path),
+            'is_short': self.is_short
         }
 
 # SmartPlaylist Model
@@ -188,6 +190,32 @@ def scan_videos():
             
             nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
             has_nfo_file = os.path.exists(nfo_path)
+
+            # --- START: NEW FFPROBE LOGIC FOR ASPECT RATIO ---
+            is_short = False
+            try:
+                # Run ffprobe to get video width and height
+                # We use 'ffprobe' (part of ffmpeg) to do this
+                ffprobe_cmd = [
+                    'ffprobe',
+                    '-v', 'error',
+                    '-select_streams', 'v:0',
+                    '-show_entries', 'stream=width,height',
+                    '-of', 'csv=p=0:nk=1',
+                    video_file_path
+                ]
+                
+                result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True)
+                width, height = map(int, result.stdout.strip().split(','))
+                
+                if height > width:
+                    is_short = True
+                    
+            except subprocess.CalledProcessError as e:
+                print(f"  - Warning: ffprobe failed for {filename}. Output: {e.stderr}")
+            except Exception as e:
+                print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
+            # --- END: NEW FFPROBE LOGIC ---
 
             # --- START: Find Subtitles ---
             srt_path = None
@@ -315,13 +343,8 @@ def scan_videos():
                     existing_video.uploaded_date = uploaded_date 
                     existing_video.youtube_id = youtube_id
                     
-                    # --- THIS IS THE FIX ---
-                    # Only update the thumbnail path if a new *local* file was
-                    # found. This prevents overwriting a central-generated
-                    # thumb path with 'None' just because no local thumb exists.
                     if thumbnail_file_path:
                         existing_video.thumbnail_path = thumbnail_file_path
-                    # --- END FIX ---
                     
                     existing_video.subtitle_path = srt_path
                     existing_video.subtitle_label = srt_label
@@ -331,6 +354,7 @@ def scan_videos():
                     existing_video.file_size = file_size_bytes
                     existing_video.file_format = file_format_str
                     existing_video.has_nfo = has_nfo_file
+                    existing_video.is_short = is_short # --- ADD THIS ---
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -349,7 +373,8 @@ def scan_videos():
                         filename=filename,
                         file_size=file_size_bytes,
                         file_format=file_format_str,
-                        has_nfo=has_nfo_file
+                        has_nfo=has_nfo_file,
+                        is_short=is_short # --- ADD THIS ---
                     )
                     db.session.add(new_video)
                     added_count += 1

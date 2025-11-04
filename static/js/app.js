@@ -83,6 +83,8 @@ function videoApp() {
             } else if (viewType === 'history') {
                 // Filter for videos watched for 4 seconds or more
                 videos = this.appData.videos.filter(v => v.watched_duration >= 4);
+            } else if (viewType === 'shorts') {
+                videos = this.appData.videos.filter(v => v.is_short);
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -561,6 +563,7 @@ function videoApp() {
             else if (type === 'favorites') { this.currentTitle = 'Favorites'; }
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
+            else if (type === 'shorts') { this.currentTitle = 'Shorts'; }
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];

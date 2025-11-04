@@ -23,6 +23,20 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
+        .aspect-box {
+            /* This replaces the inline "relative w-full bg-..." */
+            position: relative;
+            width: 100%;
+            background-color: var(--bg-highlight);
+            /* This animates the aspect ratio change! */
+            transition: padding-top 0.3s ease-in-out;
+        }
+        .aspect-16-9 {
+            padding-top: 56.25%; /* 9 / 16 */
+        }
+        .aspect-9-16 {
+            padding-top: 177.78%; /* 16 / 9, for a perfect 9:16 ratio */
+        }
     </style>
 
 </head>
@@ -390,7 +404,11 @@
                 </div>
             </header>
 
-            <div class="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2 lg:grid-cols-3" x-cloak>
+            <div class="grid grid-cols-1 gap-6 p-4" x-cloak
+                 :class="{
+                    'sm:grid-cols-2 lg:grid-cols-3': currentView.type !== 'shorts',
+                    'sm:grid-cols-3 lg:grid-cols-5': currentView.type === 'shorts'
+                 }">
                 <template x-if="filteredVideos.length === 0">
                     <p class="text-[var(--text-secondary)]" x-text="getEmptyMessage()"></p>
                 </template>
@@ -398,7 +416,8 @@
                     <div class="flex flex-col overflow-hidden rounded-lg bg-[var(--bg-medium)] shadow-lg">
                         <a href="#" @click.prevent="openModal(video)">
                             <template x-if="video.image_url">
-                                <div class="relative w-full bg-[var(--bg-highlight)]" style="padding-top: 56.25%;">
+                                <div class="aspect-box"
+                                     :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
                                     
                                     <img class="absolute top-0 left-0 w-full h-full object-contain" :src="video.image_url" alt=""
                                         @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
@@ -409,7 +428,8 @@
                                 </div>
                             </template>
                             <template x-if="!video.image_url">
-                                <div class="relative w-full bg-[var(--bg-highlight)]" style="padding-top: 56.25%;">
+                                <div class="aspect-box"
+                                     :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
                                     <div
                                         class="absolute top-0 left-0 w-full h-full flex items-center justify-center text-[var(--text-secondary)]">
                                         (No Thumbnail)</div>
@@ -431,20 +451,21 @@
                                 <a href="#" @click.prevent="setView('author', null, video.author)"
                                     class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors"
                                     x-text="video.author"></a>
+                                
+                                <template x-if="video.is_short">
+                                    <a href="#" 
+                                        @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
+                                        class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors"
+                                        style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
+                                        onmouseover="this.style.borderColor='#fff8e8'"
+                                        onmouseout="this.style.borderColor='#e16c39'"
+                                        :title="currentView.type === 'shorts' ? 'Clear Shorts filter' : 'Filter by Shorts'">
+                                        Short
+                                    </a>
+                                </template>
                                 <span class="block truncate text-xs mt-1 ml-2"
                                     x-text="formatDateAgo(video.published, video.uploaded)"></span>
                             </div>
-                            <div class="flex shrink-0 items-center gap-2">
-                                <button class="p-1" @click.prevent="toggleFavorite(video)"
-                                    :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
-                                        class="material-icons" style="font-size: 20px;"
-                                        x-text="video.is_favorite ? 'star' : 'star_border'"></i></button>
-                                <button class="p-1" @click.prevent="toggleBookmark(video)"
-                                    :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
-                                        class="material-icons" style="font-size: 20px;"
-                                        x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
-                            </div>
-                        </div>
                     </div>
                 </template>
             </div>
