@@ -74,6 +74,7 @@ class Video(db.Model):
     has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
     is_short = db.Column(db.Boolean, default=False)            # True if height > width
     dimensions = db.Column(db.String(100), nullable=True)      # e.g., "1920x1080"
+    duration = db.Column(db.Integer, default=0) # Duration in seconds
 
     def to_dict(self):
         """
@@ -135,6 +136,7 @@ class Video(db.Model):
             'has_subtitle': bool(self.subtitle_path),
             'is_short': self.is_short,
             'dimensions': self.dimensions,
+            'duration': self.duration
         }
 
 # SmartPlaylist Model
@@ -223,7 +225,7 @@ def scan_videos():
                     'ffprobe',
                     '-v', 'error',
                     '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height:stream_tags=rotate:stream_side_data=rotation',
+                    '-show_entries', 'stream=width,height,duration:stream_tags=rotate:stream_side_data=rotation',
                     '-of', 'json',
                     video_file_path
                 ]
@@ -234,6 +236,7 @@ def scan_videos():
                     stream = data['streams'][0]
                     coded_width = stream.get('width', 0)
                     coded_height = stream.get('height', 0)
+                    duration_sec = int(float(stream.get('duration', '0')))
                     rotation = 0
                     try:
                         rotation_str = stream.get('tags', {}).get('rotate', '0')
@@ -406,6 +409,7 @@ def scan_videos():
                     existing_video.has_nfo = has_nfo_file
                     existing_video.is_short = is_short
                     existing_video.dimensions = f"{effective_width}x{effective_height}"
+                    existing_video.duration = duration_sec # --- ADD THIS ---
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -425,7 +429,8 @@ def scan_videos():
                         file_format=file_format_str,
                         has_nfo=has_nfo_file,
                         is_short=is_short,
-                        dimensions=f"{effective_width}x{effective_height}"
+                        dimensions=f"{effective_width}x{effective_height}",
+                        duration=duration_sec # --- ADD THIS ---
                     )
                     db.session.add(new_video)
                     added_count += 1

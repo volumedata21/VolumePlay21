@@ -789,6 +789,24 @@ function videoApp() {
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         },
 
+        formatDuration(totalSeconds) {
+            if (!totalSeconds || totalSeconds < 1) {
+                return '0:00';
+            }
+            totalSeconds = Math.round(totalSeconds);
+            
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+
+            const pad = (num) => num.toString().padStart(2, '0');
+
+            if (hours > 0) {
+                return `${hours}:${pad(minutes)}:${pad(seconds)}`;
+            }
+            return `${minutes}:${pad(seconds)}`;
+        },
+
         toggleFolder(path) {
             // Manages the open/closed state of folders in the sidebar by writing to the global store
             const openPaths = Alpine.store('globalState').openFolderPaths;
