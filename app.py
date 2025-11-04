@@ -11,6 +11,7 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
 import mimetypes
+import hashlib
 
 ## --- App Setup ---
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -72,6 +73,7 @@ class Video(db.Model):
     file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
     has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
     is_short = db.Column(db.Boolean, default=False)            # True if height > width
+    dimensions = db.Column(db.String(100), nullable=True)      # e.g., "1920x1080"
 
     def to_dict(self):
         """
@@ -131,7 +133,8 @@ class Video(db.Model):
             # We can re-use existing data for the "Associated Files" list
             'has_thumbnail': bool(self.thumbnail_path),
             'has_subtitle': bool(self.subtitle_path),
-            'is_short': self.is_short
+            'is_short': self.is_short,
+            'dimensions': self.dimensions,
         }
 
 # SmartPlaylist Model
@@ -191,31 +194,78 @@ def scan_videos():
             nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
             has_nfo_file = os.path.exists(nfo_path)
 
-            # --- START: NEW FFPROBE LOGIC FOR ASPECT RATIO ---
+            # --- START: FINAL, ROBUST FFPROBE LOGIC ---
             is_short = False
+            effective_width = 0
+            effective_height = 0
             try:
-                # Run ffprobe to get video width and height
-                # We use 'ffprobe' (part of ffmpeg) to do this
+                # Run ffprobe to get width, height, AND rotation from multiple sources
                 ffprobe_cmd = [
                     'ffprobe',
                     '-v', 'error',
                     '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height',
-                    '-of', 'csv=p=0:nk=1',
+                    # Ask for coded dimensions, stream tags, AND side data
+                    '-show_entries', 'stream=width,height:stream_tags=rotate:stream_side_data=rotation',
+                    '-of', 'json', # Output as JSON
                     video_file_path
                 ]
                 
                 result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True)
-                width, height = map(int, result.stdout.strip().split(','))
                 
-                if height > width:
-                    is_short = True
+                # Parse the JSON output
+                data = json.loads(result.stdout)
+                
+                if 'streams' in data and len(data['streams']) > 0:
+                    stream = data['streams'][0]
+                    coded_width = stream.get('width', 0)
+                    coded_height = stream.get('height', 0)
                     
+                    rotation = 0
+                    try:
+                        # Check 1: The 'stream_tags'
+                        rotation_str = stream.get('tags', {}).get('rotate', '0')
+                        rotation = int(float(rotation_str))
+                    except (ValueError, TypeError):
+                        rotation = 0 # Tag was missing or "N/A"
+
+                    # Check 2: The 'side_data_list' (This is the most likely place)
+                    if rotation == 0:
+                        try:
+                            # side_data_list is a list, get the first item
+                            side_data = stream.get('side_data_list', [{}])[0]
+                            rotation_str = side_data.get('rotation', '0')
+                            rotation = int(float(rotation_str))
+                        except (ValueError, TypeError, IndexError):
+                            rotation = 0 # Failed to find it here too
+                    
+                    effective_width = coded_width
+                    effective_height = coded_height
+
+                    # If rotated 90 or 270 degrees, swap the effective dimensions
+                    if abs(rotation) == 90 or abs(rotation) == 270:
+                        effective_width = coded_height
+                        effective_height = coded_width
+                    
+                    # Final check: is the *displayed* video vertical?
+                    if effective_height > effective_width:
+                        is_short = True
+                    
+                    # --- DEBUGGING PRINT ---
+                    print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short}")
+                    sys.stdout.flush()
+
+                else:
+                    print(f"  - ffprobe WARN: No streams found for {filename}.")
+                    sys.stdout.flush()
+
             except subprocess.CalledProcessError as e:
-                print(f"  - Warning: ffprobe failed for {filename}. Output: {e.stderr}")
+                stderr_output = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "(No stderr)"
+                print(f"  - Warning: ffprobe failed for {filename}. STDERR: {stderr_output}")
+            except json.JSONDecodeError:
+                print(f"  - Warning: Could not parse ffprobe JSON for {filename}.")
             except Exception as e:
                 print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
-            # --- END: NEW FFPROBE LOGIC ---
+            # --- END: FINAL, ROBUST FFPROBE LOGIC ---
 
             # --- START: Find Subtitles ---
             srt_path = None
@@ -284,6 +334,23 @@ def scan_videos():
                     if thumbnail_file_path:
                         break
             # --- END: Find Thumbnail ---
+            
+            # --- END: Find Thumbnail ---
+
+            # --- NEW: Check for a centrally-generated thumbnail ---
+            # This gives local thumbnails (MyVideo.jpg) priority,
+            # but allows us to find generated ones (a1b2c3d4.jpg).
+            if not thumbnail_file_path:
+                try:
+                    generated_thumb_path = get_thumbnail_path_for_video(video_file_path)
+                    if os.path.exists(generated_thumb_path):
+                        thumbnail_file_path = generated_thumb_path # We found one!
+                except Exception as e:
+                    print(f"  - Error checking for generated thumb: {e}")
+            # --- END NEW ---
+
+            # --- START: Parse NFO ---
+            title = None
 
             # --- START: Parse NFO ---
             title = None
@@ -355,6 +422,7 @@ def scan_videos():
                     existing_video.file_format = file_format_str
                     existing_video.has_nfo = has_nfo_file
                     existing_video.is_short = is_short # --- ADD THIS ---
+                    existing_video.dimensions = f"{effective_width}x{effective_height}" # --- ADD THIS ---
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -374,7 +442,8 @@ def scan_videos():
                         file_size=file_size_bytes,
                         file_format=file_format_str,
                         has_nfo=has_nfo_file,
-                        is_short=is_short # --- ADD THIS ---
+                        is_short=is_short, # --- ADD THIS ---
+                        dimensions=f"{effective_width}x{effective_height}" # --- ADD THIS ---
                     )
                     db.session.add(new_video)
                     added_count += 1
@@ -407,6 +476,20 @@ def build_folder_tree(paths):
             if part: 
                 current_level = current_level.setdefault(part, {})
     return tree
+
+# --- NEW HELPER FUNCTION ---
+def get_thumbnail_path_for_video(video_path):
+    """
+    Generates a persistent and unique thumbnail path based on a
+    hash of the video's full file path.
+    """
+    # Create a stable MD5 hash of the full video path
+    hash_name = hashlib.md5(video_path.encode('utf-8')).hexdigest()
+    # Define the central, writable thumbnail directory
+    thumb_dir = os.path.join(data_dir, 'thumbnails')
+    # Return the full path for the new thumbnail, e.g., /data/thumbnails/a1b2c3d4.jpg
+    return os.path.join(thumb_dir, f"{hash_name}.jpg")
+# --- END NEW HELPER FUNCTION ---
 
 # --- NEW: Helper function to convert SRT to WebVTT ---
 def srt_to_vtt(srt_content):
@@ -495,8 +578,8 @@ def _generate_thumbnails_task():
                         continue
 
                     # --- NEW: Create a safe, writable path in the /data directory ---
-                    # e.g., /data/thumbnails/14.jpg
-                    new_thumb_path = os.path.join(thumb_dir, f"{video.id}.jpg")
+                    # e.g., /data/thumbnails/a1b2c3d4.jpg
+                    new_thumb_path = get_thumbnail_path_for_video(video.video_path)
                     # --- END NEW ---
 
                     # --- FINAL FIX: Pipe output from ffmpeg, write with Python ---

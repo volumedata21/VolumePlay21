@@ -577,7 +577,7 @@
                                             <p class="!mt-0.5 break-words" x-text="modalVideo.relative_path"></p>
                                         </div>
 
-                                        <div class="grid grid-cols-2 gap-x-4">
+                                        <div class="grid grid-cols-3 gap-x-4">
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">File Size
                                                 </h4>
@@ -586,6 +586,11 @@
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Format</h4>
                                                 <p class="!mt-0.5" x-text="modalVideo.file_format"></p>
+                                            </div>
+                                            <div>
+                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions</h4>
+                                                <p class="!mt-0.5" x-text="modalVideo.dimensions || 'Unknown'"></p>
+                                            </div>
                                             </div>
                                         </div>
 
