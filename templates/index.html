@@ -419,9 +419,13 @@
                                 <div class="aspect-box"
                                      :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
                                     
-                                    <img class="absolute top-0 left-0 w-full h-full object-contain" :src="video.image_url" alt=""
-                                        @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
-                                    
+                                    <img class="absolute top-0 left-0 w-full h-full"
+                                         :class="{
+                                            'object-contain': currentView.type !== 'shorts',
+                                            'object-cover': currentView.type === 'shorts'
+                                         }"
+                                         :src="video.image_url" alt=""
+                                         @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">                                    
                                     <div
                                         class="hidden absolute top-0 left-0 w-full h-full items-center justify-center text-[var(--text-secondary)]">
                                         (Image failed)</div>
