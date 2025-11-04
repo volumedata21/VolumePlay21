@@ -170,7 +170,20 @@ def scan_videos():
 
     # CRITICAL: Start scanning from the actual video_dir root
     for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
+        
+        # --- NEW: Prune hidden directories from the walk ---
+        # This prevents os.walk from descending into .AppleDouble, etc.
+        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+        # --- END NEW ---
+
         for filename in filenames:
+            
+            # --- NEW: Skip hidden files ---
+            # This skips files like "._C0001.mov"
+            if filename.startswith('.'):
+                continue
+            # --- END NEW ---
+
             file_ext = os.path.splitext(filename)[1].lower()
             if file_ext not in video_extensions:
                 continue
@@ -335,8 +348,6 @@ def scan_videos():
                         break
             # --- END: Find Thumbnail ---
             
-            # --- END: Find Thumbnail ---
-
             # --- NEW: Check for a centrally-generated thumbnail ---
             # This gives local thumbnails (MyVideo.jpg) priority,
             # but allows us to find generated ones (a1b2c3d4.jpg).
@@ -348,9 +359,6 @@ def scan_videos():
                 except Exception as e:
                     print(f"  - Error checking for generated thumb: {e}")
             # --- END NEW ---
-
-            # --- START: Parse NFO ---
-            title = None
 
             # --- START: Parse NFO ---
             title = None
@@ -421,8 +429,8 @@ def scan_videos():
                     existing_video.file_size = file_size_bytes
                     existing_video.file_format = file_format_str
                     existing_video.has_nfo = has_nfo_file
-                    existing_video.is_short = is_short # --- ADD THIS ---
-                    existing_video.dimensions = f"{effective_width}x{effective_height}" # --- ADD THIS ---
+                    existing_video.is_short = is_short
+                    existing_video.dimensions = f"{effective_width}x{effective_height}"
                     updated_count += 1
                 else:
                     new_video = Video(
@@ -442,8 +450,8 @@ def scan_videos():
                         file_size=file_size_bytes,
                         file_format=file_format_str,
                         has_nfo=has_nfo_file,
-                        is_short=is_short, # --- ADD THIS ---
-                        dimensions=f"{effective_width}x{effective_height}" # --- ADD THIS ---
+                        is_short=is_short,
+                        dimensions=f"{effective_width}x{effective_height}"
                     )
                     db.session.add(new_video)
                     added_count += 1
