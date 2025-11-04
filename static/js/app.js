@@ -910,14 +910,11 @@ function videoApp() {
             
             this.isGeneratingThumbnails = false; // Re-enable button, stop spin
             
-            // --- MODIFIED: Do one final fetch ---
-            // If it finished successfully, do one *final* data refresh
-            // to ensure we get the very last batch.
+            // If it finished successfully, refresh the main video data
             if (this.thumbnailStatus.status === 'idle') {
-                console.log('Thumbnail generation complete, doing final fetch.');
+                console.log('Thumbnail generation complete, fetching new data.');
                 this.fetchData();
             }
-            // --- END MODIFIED ---
         },
         // --- END NEW ---
 
