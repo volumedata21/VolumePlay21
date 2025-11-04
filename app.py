@@ -47,6 +47,12 @@ THUMBNAIL_STATUS = {
     "total": 0
 }
 
+SCAN_LOCK = threading.Lock()
+SCAN_STATUS = {
+    "status": "idle", # idle, scanning, error
+    "message": ""
+}
+
 ## --- Database Models ---
 
 class Video(db.Model):
@@ -158,336 +164,342 @@ class SmartPlaylist(db.Model):
         }
 
 ## --- Helper Functions ---
-def scan_videos():
+# --- MODIFIED: Renamed to _scan_videos_task and wrapped ---
+def _scan_videos_task():
     """
-    Scans the VIDEO_DIR for video files, *then* looks for optional
-    .nfo, .srt, and thumbnail files. Creates fallbacks if metadata is missing.
-    
-    NEW: Also prunes videos from the DB that are no longer found on disk.
+    This function runs in a separate thread to scan for videos.
+    It MUST be run within an app context and manage the SCAN_LOCK.
     """
-    print(f"Starting scan of: {video_dir}")
-    added_count = 0
-    updated_count = 0
-    
-    # --- NEW: Set to store all video paths found on disk ---
-    found_video_paths = set()
-    # --- END NEW ---
-    
-    video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
-    image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
-
-    # CRITICAL: Start scanning from the actual video_dir root
-    for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
-        
-        # --- Prune hidden directories ---
-        dirnames[:] = [d for d in dirnames if not d.startswith('.')]
-
-        for filename in filenames:
+    global SCAN_STATUS
+    try:
+        # This wrapper is required for database access in a thread
+        with app.app_context():
+            SCAN_STATUS = {"status": "scanning", "message": "Starting library scan..."}
+            print(f"Starting scan of: {video_dir}")
+            added_count = 0
+            updated_count = 0
             
-            # --- Skip hidden files ---
-            if filename.startswith('.'):
-                continue
-
-            file_ext = os.path.splitext(filename)[1].lower()
-            if file_ext not in video_extensions:
-                continue
-
-            # --- GATHER ALL FILE INFO ---
-            video_file_path = os.path.normpath(os.path.join(dirpath, filename))
+            # --- Set to store all video paths found on disk ---
+            found_video_paths = set()
             
-            # --- NEW: Add found path to our set ---
-            found_video_paths.add(video_file_path)
-            # --- END NEW ---
+            video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
+            image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
 
-            video_base_filename = os.path.splitext(filename)[0]
-            video_full_filename = filename
-            
-            # Get file info (fast)
-            try:
-                file_size_bytes = os.path.getsize(video_file_path)
-                mtime = os.path.getmtime(video_file_path)
-                uploaded_date = datetime.datetime.fromtimestamp(mtime)
-            except OSError as e:
-                print(f"  - Skipping {filename} (OS Error): {e}")
-                continue 
-
-            file_format_str = file_ext.replace('.', '')
-            
-            nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
-            has_nfo_file = os.path.exists(nfo_path)
-
-            # --- START: FINAL, ROBUST FFPROBE LOGIC ---
-            is_short = False
-            effective_width = 0
-            effective_height = 0
-            try:
-                ffprobe_cmd = [
-                    'ffprobe',
-                    '-v', 'error',
-                    '-select_streams', 'v:0',
-                    '-show_entries', 'stream=width,height,duration:stream_tags=rotate:stream_side_data=rotation',
-                    '-of', 'json',
-                    video_file_path
-                ]
-                result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True)
-                data = json.loads(result.stdout)
+            # CRITICAL: Start scanning from the actual video_dir root
+            for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
-                if 'streams' in data and len(data['streams']) > 0:
-                    stream = data['streams'][0]
-                    coded_width = stream.get('width', 0)
-                    coded_height = stream.get('height', 0)
-                    duration_sec = int(float(stream.get('duration', '0')))
-                    rotation = 0
+                # --- Prune hidden directories ---
+                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+
+                for filename in filenames:
+                    
+                    # --- Skip hidden files ---
+                    if filename.startswith('.'):
+                        continue
+
+                    file_ext = os.path.splitext(filename)[1].lower()
+                    if file_ext not in video_extensions:
+                        continue
+
+                    # --- GATHER ALL FILE INFO ---
+                    video_file_path = os.path.normpath(os.path.join(dirpath, filename))
+                    
+                    # --- Add found path to our set ---
+                    found_video_paths.add(video_file_path)
+
+                    video_base_filename = os.path.splitext(filename)[0]
+                    video_full_filename = filename
+                    
+                    # Get file info (fast)
                     try:
-                        rotation_str = stream.get('tags', {}).get('rotate', '0')
-                        rotation = int(float(rotation_str))
-                    except (ValueError, TypeError):
-                        rotation = 0
-                    if rotation == 0:
-                        try:
-                            side_data = stream.get('side_data_list', [{}])[0]
-                            rotation_str = side_data.get('rotation', '0')
-                            rotation = int(float(rotation_str))
-                        except (ValueError, TypeError, IndexError):
+                        file_size_bytes = os.path.getsize(video_file_path)
+                        mtime = os.path.getmtime(video_file_path)
+                        uploaded_date = datetime.datetime.fromtimestamp(mtime)
+                    except OSError as e:
+                        print(f"  - Skipping {filename} (OS Error): {e}")
+                        continue 
+
+                    file_format_str = file_ext.replace('.', '')
+                    
+                    nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
+                    has_nfo_file = os.path.exists(nfo_path)
+
+                    # --- START: FINAL, ROBUST FFPROBE LOGIC ---
+                    is_short = False
+                    effective_width = 0
+                    effective_height = 0
+                    duration_sec = 0 # Default duration
+                    try:
+                        ffprobe_cmd = [
+                            'ffprobe',
+                            '-v', 'error',
+                            '-select_streams', 'v:0',
+                            '-show_entries', 'stream=width,height,duration:stream_tags=rotate:stream_side_data=rotation',
+                            '-of', 'json',
+                            video_file_path
+                        ]
+                        result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True)
+                        data = json.loads(result.stdout)
+                        
+                        if 'streams' in data and len(data['streams']) > 0:
+                            stream = data['streams'][0]
+                            coded_width = stream.get('width', 0)
+                            coded_height = stream.get('height', 0)
+                            duration_sec = int(float(stream.get('duration', '0')))
                             rotation = 0
-                    
-                    effective_width = coded_width
-                    effective_height = coded_height
+                            try:
+                                rotation_str = stream.get('tags', {}).get('rotate', '0')
+                                rotation = int(float(rotation_str))
+                            except (ValueError, TypeError):
+                                rotation = 0
+                            if rotation == 0:
+                                try:
+                                    side_data = stream.get('side_data_list', [{}])[0]
+                                    rotation_str = side_data.get('rotation', '0')
+                                    rotation = int(float(rotation_str))
+                                except (ValueError, TypeError, IndexError):
+                                    rotation = 0
+                            
+                            effective_width = coded_width
+                            effective_height = coded_height
 
-                    if abs(rotation) == 90 or abs(rotation) == 270:
-                        effective_width = coded_height
-                        effective_height = coded_width
-                    
-                    if effective_height > effective_width:
-                        is_short = True
-                    
-                    print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short}")
-                    sys.stdout.flush()
-                else:
-                    print(f"  - ffprobe WARN: No streams found for {filename}.")
-                    sys.stdout.flush()
-            except subprocess.CalledProcessError as e:
-                stderr_output = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "(No stderr)"
-                print(f"  - Warning: ffprobe failed for {filename}. STDERR: {stderr_output}")
-            except json.JSONDecodeError:
-                print(f"  - Warning: Could not parse ffprobe JSON for {filename}.")
-            except Exception as e:
-                print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
-            # --- END: FINAL, ROBUST FFPROBE LOGIC ---
+                            if abs(rotation) == 90 or abs(rotation) == 270:
+                                effective_width = coded_height
+                                effective_height = coded_width
+                            
+                            if effective_height > effective_width:
+                                is_short = True
+                            
+                            print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short}")
+                            sys.stdout.flush()
+                        else:
+                            print(f"  - ffprobe WARN: No streams found for {filename}.")
+                            sys.stdout.flush()
+                    except subprocess.CalledProcessError as e:
+                        stderr_output = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "(No stderr)"
+                        print(f"  - Warning: ffprobe failed for {filename}. STDERR: {stderr_output}")
+                    except json.JSONDecodeError:
+                        print(f"  - Warning: Could not parse ffprobe JSON for {filename}.")
+                    except Exception as e:
+                        print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
+                    # --- END: FINAL, ROBUST FFPROBE LOGIC ---
 
-            # (Rest of the scan logic for subtitles, local thumbnails, NFOs, etc.)
-            
-            # --- START: Find Subtitles ---
-            srt_path = None
-            srt_label = None
-            srt_lang = None
-            found_srts = []
-            for srt_filename in filenames:
-                if not srt_filename.endswith('.srt'):
-                    continue
-                lang_code = None
-                if srt_filename.startswith(video_full_filename):
-                    suffix = srt_filename[len(video_full_filename):-4]
-                    if suffix.startswith('.'):
-                        lang_code = suffix[1:]
-                elif srt_filename.startswith(video_base_filename):
-                    suffix = srt_filename[len(video_base_filename):-4]
-                    if suffix.startswith('.'):
-                        lang_code = suffix[1:]
-                    elif suffix == "":
-                        lang_code = "en"
-                if lang_code:
-                    found_srts.append({
-                        "lang": lang_code, 
-                        "path": os.path.normpath(os.path.join(dirpath, srt_filename))
-                    })
-            if found_srts:
-                best_track = None
-                en_track = next((t for t in found_srts if t['lang'] == 'en'), None)
-                if en_track:
-                    best_track = en_track
-                    srt_lang = "en"
-                    if en_track['path'].endswith('.en.srt'):
-                        srt_label = "English"
-                    else:
-                        srt_label = "CC On"
-                else:
-                    best_track = found_srts[0]
-                    srt_lang = best_track['lang'].split('.')[0]
-                    srt_label = srt_lang.capitalize()
-                srt_path = best_track['path']
-            # --- END: Find Subtitles ---
+                    # --- START: Find Subtitles ---
+                    srt_path = None
+                    srt_label = None
+                    srt_lang = None
+                    found_srts = []
+                    for srt_filename in filenames:
+                        if not srt_filename.endswith('.srt'):
+                            continue
+                        lang_code = None
+                        if srt_filename.startswith(video_full_filename):
+                            suffix = srt_filename[len(video_full_filename):-4]
+                            if suffix.startswith('.'):
+                                lang_code = suffix[1:]
+                        elif srt_filename.startswith(video_base_filename):
+                            suffix = srt_filename[len(video_base_filename):-4]
+                            if suffix.startswith('.'):
+                                lang_code = suffix[1:]
+                            elif suffix == "":
+                                lang_code = "en"
+                        if lang_code:
+                            found_srts.append({
+                                "lang": lang_code, 
+                                "path": os.path.normpath(os.path.join(dirpath, srt_filename))
+                            })
+                    if found_srts:
+                        best_track = None
+                        en_track = next((t for t in found_srts if t['lang'] == 'en'), None)
+                        if en_track:
+                            best_track = en_track
+                            srt_lang = "en"
+                            if en_track['path'].endswith('.en.srt'):
+                                srt_label = "English"
+                            else:
+                                srt_label = "CC On"
+                        else:
+                            best_track = found_srts[0]
+                            srt_lang = best_track['lang'].split('.')[0]
+                            srt_label = srt_lang.capitalize()
+                        srt_path = best_track['path']
+                    # --- END: Find Subtitles ---
 
-            # --- START: Find Thumbnail ---
-            thumbnail_file_path = None
-            for img_ext in image_extensions:
-                potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
-                if os.path.exists(potential_thumb):
-                    thumbnail_file_path = potential_thumb
-                    break
-            if not thumbnail_file_path:
-                for suffix in ['-thumb', ' thumbnail', ' folder']:
+                    # --- START: Find Thumbnail ---
+                    thumbnail_file_path = None
                     for img_ext in image_extensions:
-                        potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + suffix + img_ext))
+                        potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
                         if os.path.exists(potential_thumb):
                             thumbnail_file_path = potential_thumb
                             break
-                    if thumbnail_file_path:
-                        break
-            # --- END: Find Thumbnail ---
-            
-            # --- Check for a centrally-generated thumbnail ---
-            if not thumbnail_file_path:
-                try:
-                    generated_thumb_path = get_thumbnail_path_for_video(video_file_path)
-                    if os.path.exists(generated_thumb_path):
-                        thumbnail_file_path = generated_thumb_path
-                except Exception as e:
-                    print(f"  - Error checking for generated thumb: {e}")
-
-            # --- START: Parse NFO ---
-            title = None
-            show_title = None
-            plot = None
-            aired_date = None
-            youtube_id = None 
-            if has_nfo_file:
-                try:
-                    tree = ET.parse(nfo_path)
-                    root = tree.getroot()
-                    title = root.findtext('title')
-                    show_title = root.findtext('showtitle')
-                    plot = root.findtext('plot')
-                    youtube_id = root.findtext('uniqueid')
-                    aired_str = root.findtext('aired')
-                    if aired_str:
+                    if not thumbnail_file_path:
+                        for suffix in ['-thumb', ' thumbnail', ' folder']:
+                            for img_ext in image_extensions:
+                                potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + suffix + img_ext))
+                                if os.path.exists(potential_thumb):
+                                    thumbnail_file_path = potential_thumb
+                                    break
+                            if thumbnail_file_path:
+                                break
+                    # --- END: Find Thumbnail ---
+                    
+                    # --- Check for a centrally-generated thumbnail ---
+                    if not thumbnail_file_path:
                         try:
-                            date_only_str = aired_str.split(' ')[0].split('T')[0]
-                            aired_date = datetime.datetime.strptime(date_only_str, '%Y-%m-%d')
-                        except (ValueError, TypeError):
-                            pass
-                except ET.ParseError:
-                    print(f"  - Skipping {nfo_path} (XML Parse Error)")
-                except Exception as e:
-                    print(f"  - Error processing {nfo_path}: {e}")
-            
-            if not title:
-                title = video_base_filename.replace('.', ' ')
-            if not show_title:
-                current_dir = os.path.dirname(video_file_path)
-                relative_path_segment = os.path.relpath(current_dir, video_dir)
-                if relative_path_segment == '.':
-                    show_title = "Unknown Show"
-                else:
-                    show_title = os.path.basename(relative_path_segment) 
-            
-            if not aired_date:
-                aired_date = uploaded_date 
-            if not plot:
-                plot = ""
-            # --- END: Parse NFO ---
+                            generated_thumb_path = get_thumbnail_path_for_video(video_file_path)
+                            if os.path.exists(generated_thumb_path):
+                                thumbnail_file_path = generated_thumb_path
+                        except Exception as e:
+                            print(f"  - Error checking for generated thumb: {e}")
 
-            # --- START: Database Update ---
-            try:
-                existing_video = Video.query.filter_by(video_path=video_file_path).first()
-                
-                if existing_video:
-                    existing_video.title = title
-                    existing_video.show_title = show_title
-                    existing_video.summary = plot
-                    existing_video.aired = aired_date
-                    existing_video.uploaded_date = uploaded_date 
-                    existing_video.youtube_id = youtube_id
-                    if thumbnail_file_path:
-                        existing_video.thumbnail_path = thumbnail_file_path
-                    existing_video.subtitle_path = srt_path
-                    existing_video.subtitle_label = srt_label
-                    existing_video.subtitle_lang = srt_lang
-                    existing_video.filename = filename
-                    existing_video.file_size = file_size_bytes
-                    existing_video.file_format = file_format_str
-                    existing_video.has_nfo = has_nfo_file
-                    existing_video.is_short = is_short
-                    existing_video.dimensions = f"{effective_width}x{effective_height}"
-                    existing_video.duration = duration_sec # --- ADD THIS ---
-                    updated_count += 1
-                else:
-                    new_video = Video(
-                        title=title,
-                        show_title=show_title,
-                        summary=plot,
-                        aired=aired_date,
-                        uploaded_date=uploaded_date, 
-                        youtube_id=youtube_id,
-                        video_path=video_file_path,
-                        thumbnail_path=thumbnail_file_path,
-                        subtitle_path=srt_path,
-                        subtitle_label=srt_label,
-                        subtitle_lang=srt_lang,
-                        filename=filename,
-                        file_size=file_size_bytes,
-                        file_format=file_format_str,
-                        has_nfo=has_nfo_file,
-                        is_short=is_short,
-                        dimensions=f"{effective_width}x{effective_height}",
-                        duration=duration_sec # --- ADD THIS ---
-                    )
-                    db.session.add(new_video)
-                    added_count += 1
-            except Exception as e:
-                print(f"  - DB Error processing {video_file_path}: {e}")
-                db.session.rollback()
-            # --- END: Database Update ---
+                    # --- START: Parse NFO ---
+                    title = None
+                    show_title = None
+                    plot = None
+                    aired_date = None
+                    youtube_id = None 
+                    if has_nfo_file:
+                        try:
+                            tree = ET.parse(nfo_path)
+                            root = tree.getroot()
+                            title = root.findtext('title')
+                            show_title = root.findtext('showtitle')
+                            plot = root.findtext('plot')
+                            youtube_id = root.findtext('uniqueid')
+                            aired_str = root.findtext('aired')
+                            if aired_str:
+                                try:
+                                    date_only_str = aired_str.split(' ')[0].split('T')[0]
+                                    aired_date = datetime.datetime.strptime(date_only_str, '%Y-%m-%d')
+                                except (ValueError, TypeError):
+                                    pass
+                        except ET.ParseError:
+                            print(f"  - Skipping {nfo_path} (XML Parse Error)")
+                        except Exception as e:
+                            print(f"  - Error processing {nfo_path}: {e}")
+                    
+                    if not title:
+                        title = video_base_filename.replace('.', ' ')
+                    if not show_title:
+                        current_dir = os.path.dirname(video_file_path)
+                        relative_path_segment = os.path.relpath(current_dir, video_dir)
+                        if relative_path_segment == '.':
+                            show_title = "Unknown Show"
+                        else:
+                            show_title = os.path.basename(relative_path_segment) 
+                    
+                    if not aired_date:
+                        aired_date = uploaded_date 
+                    if not plot:
+                        plot = ""
+                    # --- END: Parse NFO ---
 
-    # (This commit handles all the additions and updates)
-    if added_count > 0 or updated_count > 0:
-        db.session.commit()
-    print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
-    
-    # --- NEW: PRUNING LOGIC ---
-    print("Starting prune of missing videos...")
-    deleted_count = 0
-    try:
-        # Get all videos from the DB. Use with_entities for efficiency.
-        all_db_videos = Video.query.with_entities(Video.id, Video.video_path, Video.thumbnail_path).all()
-        
-        # Create a map of {path: video_data} for quick lookup
-        db_video_map = {v.video_path: v for v in all_db_videos}
-        
-        # Find the difference: paths in DB but not on disk
-        paths_to_delete = set(db_video_map.keys()) - found_video_paths
-        
-        if not paths_to_delete:
-            print("Prune finished. No videos to delete.")
-        else:
-            print(f"Found {len(paths_to_delete)} videos to delete...")
-            for path in paths_to_delete:
-                video_data = db_video_map[path]
-                
-                # 1. Delete thumbnail file from disk
-                if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
+                    # --- START: Database Update ---
                     try:
-                        os.remove(video_data.thumbnail_path)
-                        print(f"  - Deleted thumbnail: {video_data.thumbnail_path}")
-                    except OSError as e:
-                        print(f"  - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
-                
-                # 2. Delete video from DB
-                # Use a direct delete query for efficiency
-                db.session.query(Video).filter(Video.id == video_data.id).delete()
-                print(f"  - Deleted video record: {video_data.video_path}")
-                deleted_count += 1
-                
-            if deleted_count > 0:
+                        existing_video = Video.query.filter_by(video_path=video_file_path).first()
+                        
+                        if existing_video:
+                            existing_video.title = title
+                            existing_video.show_title = show_title
+                            existing_video.summary = plot
+                            existing_video.aired = aired_date
+                            existing_video.uploaded_date = uploaded_date 
+                            existing_video.youtube_id = youtube_id
+                            if thumbnail_file_path:
+                                existing_video.thumbnail_path = thumbnail_file_path
+                            existing_video.subtitle_path = srt_path
+                            existing_video.subtitle_label = srt_label
+                            existing_video.subtitle_lang = srt_lang
+                            existing_video.filename = filename
+                            existing_video.file_size = file_size_bytes
+                            existing_video.file_format = file_format_str
+                            existing_video.has_nfo = has_nfo_file
+                            existing_video.is_short = is_short
+                            existing_video.dimensions = f"{effective_width}x{effective_height}"
+                            existing_video.duration = duration_sec
+                            updated_count += 1
+                        else:
+                            new_video = Video(
+                                title=title,
+                                show_title=show_title,
+                                summary=plot,
+                                aired=aired_date,
+                                uploaded_date=uploaded_date, 
+                                youtube_id=youtube_id,
+                                video_path=video_file_path,
+                                thumbnail_path=thumbnail_file_path,
+                                subtitle_path=srt_path,
+                                subtitle_label=srt_label,
+                                subtitle_lang=srt_lang,
+                                filename=filename,
+                                file_size=file_size_bytes,
+                                file_format=file_format_str,
+                                has_nfo=has_nfo_file,
+                                is_short=is_short,
+                                dimensions=f"{effective_width}x{effective_height}",
+                                duration=duration_sec
+                            )
+                            db.session.add(new_video)
+                            added_count += 1
+                    except Exception as e:
+                        print(f"  - DB Error processing {video_file_path}: {e}")
+                        db.session.rollback()
+                    # --- END: Database Update ---
+
+            # (This commit handles all the additions and updates)
+            if added_count > 0 or updated_count > 0:
                 db.session.commit()
-            print(f"Prune finished. Deleted {deleted_count} videos.")
+            print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
+            
+            # --- PRUNING LOGIC ---
+            print("Starting prune of missing videos...")
+            deleted_count = 0
+            try:
+                all_db_videos = Video.query.with_entities(Video.id, Video.video_path, Video.thumbnail_path).all()
+                db_video_map = {v.video_path: v for v in all_db_videos}
+                paths_to_delete = set(db_video_map.keys()) - found_video_paths
+                
+                if not paths_to_delete:
+                    print("Prune finished. No videos to delete.")
+                else:
+                    print(f"Found {len(paths_to_delete)} videos to delete...")
+                    for path in paths_to_delete:
+                        video_data = db_video_map[path]
+                        
+                        if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
+                            try:
+                                os.remove(video_data.thumbnail_path)
+                                print(f"  - Deleted thumbnail: {video_data.thumbnail_path}")
+                            except OSError as e:
+                                print(f"  - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
+                        
+                        db.session.query(Video).filter(Video.id == video_data.id).delete()
+                        print(f"  - Deleted video record: {video_data.video_path}")
+                        deleted_count += 1
+                        
+                    if deleted_count > 0:
+                        db.session.commit()
+                    print(f"Prune finished. Deleted {deleted_count} videos.")
+
+            except Exception as e:
+                print(f"  - Error during prune: {e}")
+                db.session.rollback()
+            # --- END PRUNING LOGIC ---
+            
+            total_processed = added_count + updated_count + deleted_count
+            print(f"Scan finished. Processed {total_processed} videos.")
+            SCAN_STATUS = {"status": "idle", "message": "Scan complete."}
 
     except Exception as e:
-        print(f"  - Error during prune: {e}")
+        print(f"  - Error during scan task: {e}")
         db.session.rollback()
-    # --- END NEW: PRUNING LOGIC ---
-    
-    return added_count + updated_count + deleted_count
+        SCAN_STATUS = {"status": "error", "message": str(e)}
+    finally:
+        # No matter what, release the lock so another scan can run
+        SCAN_LOCK.release()
+        print("Scan lock released.")
+        sys.stdout.flush()
+# --- END MODIFIED FUNCTION ---
 
 
 def build_folder_tree(paths):
@@ -706,18 +718,26 @@ def _generate_thumbnails_task():
 
 
 ## --- Initialization Function ---
+# --- MODIFIED: To be asynchronous ---
 def initialize_database():
-    """Creates all database tables and runs initial scan if empty."""
+    """Creates all database tables and starts initial scan if empty."""
     with app.app_context():
         print("Initializing database...")
         db.create_all()
         video_count = Video.query.count()
         if video_count == 0:
-            print("No videos found in database. Running initial scan...")
-            scan_videos()
+            print("No videos found. Acquiring scan lock for initial scan...")
+            if SCAN_LOCK.acquire(blocking=False):
+                print("Lock acquired. Starting initial background scan...")
+                # Start the scan in a background thread so the app can launch
+                scan_thread = threading.Thread(target=_scan_videos_task)
+                scan_thread.start()
+            else:
+                print("Scan lock is busy (another scan is already running).")
         else:
             print(f"Database already contains {video_count} videos.")
-        print("Database initialization complete.")
+        print("Database initialization complete. Server is starting.")
+# --- END MODIFIED ---
 
 # Run initialization logic *outside* the __name__ == '__main__' block
 initialize_database()
@@ -1004,20 +1024,31 @@ def update_video_progress(video_id):
 
 ## --- API: Scan ---
 
+# --- MODIFIED: To be asynchronous ---
 @app.route('/api/scan_videos', methods=['POST'])
 def scan_videos_route():
     """
-    API endpoint to trigger a full video scan.
+    API endpoint to trigger a full video scan *in the background*.
     """
     print("API: Received scan request.")
+    if not SCAN_LOCK.acquire(blocking=False):
+        print("API: Scan already in progress.")
+        # 409 Conflict: A scan is already running.
+        return jsonify({"message": "Scan already in progress."}), 409
+    
     try:
-        count = scan_videos()
-        print(f"Scan complete. Found/updated {count} videos.")
-        return jsonify({'success': True, 'videos_found': count})
+        print("API: Starting background video scan...")
+        SCAN_STATUS = {"status": "scanning", "message": "Scan started by user."}
+        scan_thread = threading.Thread(target=_scan_videos_task)
+        scan_thread.start()
+        # 202 Accepted: The request has been accepted.
+        return jsonify({"message": "Scan started in background."}), 202
     except Exception as e:
-        print(f"Error during scan: {e}")
-        db.session.rollback()
+        SCAN_LOCK.release()
+        SCAN_STATUS = {"status": "error", "message": str(e)}
+        print(f"API: Failed to start scan: {str(e)}")
         return jsonify({'error': str(e)}), 500
+# --- END MODIFIED ---
 
 # --- NEW --- API to generate missing thumbnails in the background
 @app.route('/api/thumbnails/generate_missing', methods=['POST'])
@@ -1069,6 +1100,16 @@ def get_thumbnail_status():
     """
     global THUMBNAIL_STATUS
     return jsonify(THUMBNAIL_STATUS)
+
+# --- ADD THIS NEW ROUTE ---
+@app.route('/api/scan/status', methods=['GET'])
+def get_scan_status():
+    """
+    Returns the current status of the video scan task.
+    """
+    global SCAN_STATUS
+    return jsonify(SCAN_STATUS)
+# --- END ADD ---
 
 
 ## --- Main Execution ---

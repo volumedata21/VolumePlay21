@@ -40,6 +40,8 @@ function videoApp() {
             Alpine.store('globalState').openFolderPaths = [];
 
             this.fetchData();
+
+            this.startScanPolling(); // Check if a scan is running on load
         },
 
         async fetchData() {
@@ -842,21 +844,21 @@ function videoApp() {
             }
         },
 
-        async scanVideoLibrary(isQuiet = false) {
-            if (this.isScanning) return;
-            if (!isQuiet) this.isScanning = true;
+        async scanVideoLibrary() {
+            if (this.isScanning) return; // Don't click if a scan is already polling
+            
             try {
                 const response = await fetch('/api/scan_videos', { method: 'POST' });
-                if (!response.ok) {
+                
+                // On a 202 (started) or 409 (already running), start polling
+                if (response.status === 202 || response.status === 409) {
+                    this.startScanPolling();
+                } else {
                     const result = await response.json();
-                    console.warn('Scan endpoint reported errors:', result.error || 'Unknown error');
+                    console.error('Failed to start scan:', result.error);
                 }
-                await this.fetchData();
             } catch (e) {
-                console.error('Error scanning library:', e);
-            }
-            finally {
-                if (!isQuiet) this.isScanning = false;
+                console.error('Error starting scan:', e);
             }
         },
 
@@ -934,6 +936,48 @@ function videoApp() {
             // If it finished successfully, refresh the main video data
             if (this.thumbnailStatus.status === 'idle') {
                 console.log('Thumbnail generation complete, fetching new data.');
+                this.fetchData();
+            }
+        },
+
+        startScanPolling() {
+            if (this.scanPollInterval) {
+                clearInterval(this.scanPollInterval); // Clear any old pollers
+            }
+            
+            this.isScanning = true; // This will make the refresh icon spin
+            
+            this.scanPollInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/scan/status');
+                    if (!response.ok) throw new Error('Scan status poll failed');
+                    
+                    const data = await response.json();
+                    this.scanStatus = data;
+
+                    // If the job is done (idle) or errored, stop polling
+                    if (data.status === 'idle' || data.status === 'error') {
+                        this.stopScanPolling();
+                    }
+                } catch (e) {
+                    console.error(e);
+                    this.scanStatus = { status: 'error', message: e.message };
+                    this.stopScanPolling(); // Stop if we can't even poll
+                }
+            }, 3000); // Poll every 3 seconds
+        },
+
+        stopScanPolling() {
+            if (this.scanPollInterval) {
+                clearInterval(this.scanPollInterval);
+                this.scanPollInterval = null;
+            }
+            
+            this.isScanning = false; // Stop the refresh icon from spinning
+            
+            // If it finished successfully, refresh the main video data
+            if (this.scanStatus.status === 'idle') {
+                console.log('Video scan complete, fetching new data.');
                 this.fetchData();
             }
         },
