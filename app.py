@@ -48,10 +48,13 @@ THUMBNAIL_STATUS = {
 }
 
 SCAN_LOCK = threading.Lock()
+# --- MODIFIED --- Add progress key
 SCAN_STATUS = {
     "status": "idle", # idle, scanning, error
-    "message": ""
+    "message": "",
+    "progress": 0
 }
+# --- END MODIFIED ---
 
 ## --- Database Models ---
 
@@ -174,10 +177,14 @@ def _scan_videos_task():
     try:
         # This wrapper is required for database access in a thread
         with app.app_context():
-            SCAN_STATUS = {"status": "scanning", "message": "Starting library scan..."}
+            # --- MODIFIED ---
+            SCAN_STATUS = {"status": "scanning", "message": "Starting library scan...", "progress": 0}
+            # --- END MODIFIED ---
+            
             print(f"Starting scan of: {video_dir}")
             added_count = 0
             updated_count = 0
+            deleted_count = 0
             
             # --- Set to store all video paths found on disk ---
             found_video_paths = set()
@@ -254,10 +261,18 @@ def _scan_videos_task():
                                 rotation = 0
                             if rotation == 0:
                                 try:
+                                    # side_data_list is a list, get the first item
                                     side_data = stream.get('side_data_list', [{}])[0]
                                     rotation_str = side_data.get('rotation', '0')
                                     rotation = int(float(rotation_str))
                                 except (ValueError, TypeError, IndexError):
+                                    rotation = 0
+                            # Check 3: 'disposition' tags
+                            if rotation == 0:
+                                try:
+                                    rotation_str = stream.get('disposition', {}).get('rotate', '0')
+                                    rotation = int(float(rotation_str))
+                                except (ValueError, TypeError):
                                     rotation = 0
                             
                             effective_width = coded_width
@@ -446,13 +461,28 @@ def _scan_videos_task():
                         db.session.rollback()
                     # --- END: Database Update ---
 
-            # (This commit handles all the additions and updates)
+                    # --- NEW: Commit in batches of 50 ---
+                    current_progress = added_count + updated_count
+                    if current_progress > 0 and current_progress % 50 == 0:
+                        print(f"  - Committing batch of 50 to database...")
+                        # --- MODIFIED ---
+                        SCAN_STATUS['progress'] = current_progress
+                        SCAN_STATUS['message'] = f"Scanning... {current_progress} processed."
+                        # --- END MODIFIED ---
+                        sys.stdout.flush()
+                        db.session.commit()
+                    # --- END NEW ---
+
+            # (This commit handles the final batch of additions/updates)
             if added_count > 0 or updated_count > 0:
                 db.session.commit()
             print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
             
             # --- PRUNING LOGIC ---
             print("Starting prune of missing videos...")
+            # --- MODIFIED ---
+            SCAN_STATUS['message'] = "Pruning deleted videos..."
+            # --- END MODIFIED ---
             deleted_count = 0
             try:
                 all_db_videos = Video.query.with_entities(Video.id, Video.video_path, Video.thumbnail_path).all()
@@ -488,12 +518,16 @@ def _scan_videos_task():
             
             total_processed = added_count + updated_count + deleted_count
             print(f"Scan finished. Processed {total_processed} videos.")
-            SCAN_STATUS = {"status": "idle", "message": "Scan complete."}
+            # --- MODIFIED ---
+            SCAN_STATUS = {"status": "idle", "message": "Scan complete.", "progress": 0}
+            # --- END MODIFIED ---
 
     except Exception as e:
         print(f"  - Error during scan task: {e}")
         db.session.rollback()
-        SCAN_STATUS = {"status": "error", "message": str(e)}
+        # --- MODIFIED ---
+        SCAN_STATUS = {"status": "error", "message": str(e), "progress": 0}
+        # --- END MODIFIED ---
     finally:
         # No matter what, release the lock so another scan can run
         SCAN_LOCK.release()
@@ -730,6 +764,9 @@ def initialize_database():
             if SCAN_LOCK.acquire(blocking=False):
                 print("Lock acquired. Starting initial background scan...")
                 # Start the scan in a background thread so the app can launch
+                # --- MODIFIED ---
+                SCAN_STATUS = {"status": "scanning", "message": "Starting initial scan...", "progress": 0}
+                # --- END MODIFIED ---
                 scan_thread = threading.Thread(target=_scan_videos_task)
                 scan_thread.start()
             else:
@@ -1038,7 +1075,9 @@ def scan_videos_route():
     
     try:
         print("API: Starting background video scan...")
-        SCAN_STATUS = {"status": "scanning", "message": "Scan started by user."}
+        # --- MODIFIED ---
+        SCAN_STATUS = {"status": "scanning", "message": "Scan started by user.", "progress": 0}
+        # --- END MODIFIED ---
         scan_thread = threading.Thread(target=_scan_videos_task)
         scan_thread.start()
         # 202 Accepted: The request has been accepted.
@@ -1089,7 +1128,7 @@ def generate_missing_thumbnails_route():
         # If starting the thread fails, release the lock
         thumbnail_generation_lock.release()
         print(f"API: Failed to start background thumbnail task: {str(e)}")
-        sys.stdout.flush() 
+        sys.stdout.flush()
         THUMBNAIL_STATUS.update({"status": "error", "message": str(e)})
         return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
 

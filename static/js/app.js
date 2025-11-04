@@ -193,7 +193,15 @@ function videoApp() {
         },
 
         getEmptyMessage() {
-            if (this.isScanning && this.appData.videos.length === 0) return 'Scanning library...';
+            // --- NEW: Check scan status first ---
+            if (this.isScanning) {
+                if (this.scanStatus.progress > 0) {
+                    return `Scanning library... (${this.scanStatus.progress} videos processed)`;
+                }
+                return 'Scanning library... (Starting)';
+            }
+            // --- END NEW ---
+
             if (this.searchQuery.trim() !== '') return 'No videos match your search.';
             if (!this.appData.videos || this.appData.videos.length === 0) {
                 return 'No videos found. Click the refresh icon to scan your library.';
@@ -204,7 +212,6 @@ function videoApp() {
             if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
             if (viewType === 'folder') return 'No videos found in this folder.';
             if (viewType === 'history') return 'No videos in your history yet.';
-            // NEW: Add message for smart playlists
             if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.';
@@ -954,6 +961,13 @@ function videoApp() {
                     
                     const data = await response.json();
                     this.scanStatus = data;
+
+                    // --- ADD THIS LINE ---
+                    // If the scan is running, fetch the latest data to show progress.
+                    if (data.status === 'scanning') {
+                        this.fetchData();
+                    }
+                    // --- END ADD ---
 
                     // If the job is done (idle) or errored, stop polling
                     if (data.status === 'idle' || data.status === 'error') {
