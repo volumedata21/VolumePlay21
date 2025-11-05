@@ -4,13 +4,13 @@ import datetime
 import xml.etree.ElementTree as ET # For parsing NFO files
 import json # For handling playlist filters
 import threading # For background tasks
-import subprocess # For running ffmpeg/ffprobe
+import subprocess # For running ffmpeg
 import sys # To flush print statements
-import mimetypes
-import hashlib
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func
+import mimetypes
+import hashlib
 
 ## --- App Setup ---
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -55,47 +55,48 @@ SCAN_STATUS = {
 
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(300), nullable=False)           # From NFO <title> or filename
-    show_title = db.Column(db.String(200))                     # From NFO <showtitle> or folder name
-    summary = db.Column(db.Text)                               # From NFO <plot>
-    video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
-    thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
-    subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
-    subtitle_label = db.Column(db.String(50), nullable=True)   # e.g., "English" or "CC On"
-    subtitle_lang = db.Column(db.String(10), nullable=True)    # e.g., "en"
-    aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
-    uploaded_date = db.Column(db.DateTime(timezone=False))     # File mtime
-    youtube_id = db.Column(db.String(100), nullable=True)      # From NFO <uniqueid>
+    title = db.Column(db.String(300), nullable=False)
+    show_title = db.Column(db.String(200))
+    summary = db.Column(db.Text)
+    video_path = db.Column(db.String(1000), unique=True, nullable=False)
+    thumbnail_path = db.Column(db.String(1000))
+    # --- NEW: Path to the show-level poster.jpg ---
+    show_poster_path = db.Column(db.String(1000), nullable=True)
+    # --- END NEW ---
+    subtitle_path = db.Column(db.String(1000), nullable=True)
+    subtitle_label = db.Column(db.String(50), nullable=True)
+    subtitle_lang = db.Column(db.String(10), nullable=True)
+    aired = db.Column(db.DateTime(timezone=False))
+    uploaded_date = db.Column(db.DateTime(timezone=False))
+    youtube_id = db.Column(db.String(100), nullable=True)
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
     last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
-    watched_duration = db.Column(db.Integer, default=0) # Stored in seconds
+    watched_duration = db.Column(db.Integer, default=0)
 
     # --- Technical Info ---
-    filename = db.Column(db.String(500), nullable=True)        # The video's filename (e.g., "video.mp4")
-    file_size = db.Column(db.BigInteger, nullable=True)        # Filesize in bytes
-    file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
-    has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
-    is_short = db.Column(db.Boolean, default=False)            # True if height > width
-    dimensions = db.Column(db.String(100), nullable=True)      # e.g., "1920x1080"
-    duration = db.Column(db.Integer, default=0)                # Duration in seconds
-    video_codec = db.Column(db.String(50), nullable=True)      # e.g., "h264", "hevc"
+    filename = db.Column(db.String(500), nullable=True)
+    file_size = db.Column(db.BigInteger, nullable=True)
+    file_format = db.Column(db.String(10), nullable=True)
+    has_nfo = db.Column(db.Boolean, default=False)
+    is_short = db.Column(db.Boolean, default=False)
+    dimensions = db.Column(db.String(100), nullable=True)
+    duration = db.Column(db.Integer, default=0)
+    video_codec = db.Column(db.String(50), nullable=True)
 
     def to_dict(self):
         """
         Serializes the Video object to a dictionary for the frontend API.
         """
-        # Calculate relative path for folder view
         relative_dir = '.'
         try:
             if not isinstance(self.video_path, str):
                 self.video_path = str(self.video_path)
             
             norm_video_path = os.path.normpath(self.video_path)
-            norm_base_dir = os.path.normpath(video_dir) # Use the derived base path
+            norm_base_dir = os.path.normpath(video_dir)
             
             relative_dir = os.path.relpath(os.path.dirname(norm_video_path), norm_base_dir)
-            # Normalize to use forward slashes for consistency in JS/Python
             relative_dir = relative_dir.replace(os.sep, '/')
         except ValueError:
             relative_dir = '.' 
@@ -116,6 +117,9 @@ class Video(db.Model):
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
+            # --- NEW: API URL for the show poster ---
+            'show_poster_url': f'/api/show_poster/{self.id}' if self.show_poster_path else None,
+            # --- END NEW ---
             'subtitle_url': f'/api/subtitle/{self.id}' if self.subtitle_path else None,
             'subtitle_label': self.subtitle_label or 'Subtitles',
             'subtitle_lang': self.subtitle_lang or 'en',
@@ -146,8 +150,8 @@ class Video(db.Model):
 class SmartPlaylist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    tags = db.Column(db.Text, default='[]') # Stored as JSON array of strings
-    filters = db.Column(db.Text, default='[]') # Stored as JSON array of objects
+    tags = db.Column(db.Text, default='[]')
+    filters = db.Column(db.Text, default='[]')
 
     def to_dict(self):
         return {
@@ -167,7 +171,6 @@ def _scan_videos_task():
     """
     global SCAN_STATUS
     try:
-        # This wrapper is required for database access in a thread
         with app.app_context():
             SCAN_STATUS = {"status": "scanning", "message": "Starting library scan...", "progress": 0}
             print(f"Starting scan of: {video_dir}")
@@ -179,15 +182,12 @@ def _scan_videos_task():
             video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
             image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
 
-            # --- 1. Walk the directory ---
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
-                # Prune hidden directories
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
 
                 for filename in filenames:
                     
-                    # Skip hidden files
                     if filename.startswith('.'):
                         continue
 
@@ -195,7 +195,6 @@ def _scan_videos_task():
                     if file_ext not in video_extensions:
                         continue
 
-                    # --- 2. Gather File Info & Path ---
                     video_file_path = os.path.normpath(os.path.join(dirpath, filename))
                     found_video_paths.add(video_file_path)
 
@@ -214,7 +213,7 @@ def _scan_videos_task():
                     nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
                     has_nfo_file = os.path.exists(nfo_path)
 
-                    # --- 3. Run ffprobe to get Technical Metadata ---
+                    # --- Get Technical Metadata ---
                     is_short = False
                     effective_width = 0
                     effective_height = 0
@@ -240,22 +239,15 @@ def _scan_videos_task():
                             video_codec = stream.get('codec_name', 'unknown').upper()
                             rotation = 0
                             
-                            try:
-                                rotation_str = stream.get('tags', {}).get('rotate', '0')
-                                rotation = int(float(rotation_str))
+                            try: rotation_str = stream.get('tags', {}).get('rotate', '0'); rotation = int(float(rotation_str))
                             except (ValueError, TypeError): rotation = 0
                             
                             if rotation == 0:
-                                try:
-                                    side_data = stream.get('side_data_list', [{}])[0]
-                                    rotation_str = side_data.get('rotation', '0')
-                                    rotation = int(float(rotation_str))
+                                try: side_data = stream.get('side_data_list', [{}])[0]; rotation_str = side_data.get('rotation', '0'); rotation = int(float(rotation_str))
                                 except (ValueError, TypeError, IndexError): rotation = 0
                             
                             if rotation == 0:
-                                try:
-                                    rotation_str = stream.get('disposition', {}).get('rotate', '0')
-                                    rotation = int(float(rotation_str))
+                                try: rotation_str = stream.get('disposition', {}).get('rotate', '0'); rotation = int(float(rotation_str))
                                 except (ValueError, TypeError): rotation = 0
                             
                             effective_width = coded_width
@@ -280,7 +272,7 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
 
-                    # --- 4. Find Subtitles ---
+                    # --- Find Subtitles ---
                     srt_path = None
                     srt_label = None
                     srt_lang = None
@@ -304,7 +296,7 @@ def _scan_videos_task():
                         srt_lang = best_track['lang'].split('.')[0]
                         srt_label = "English" if srt_lang == "en" else srt_lang.capitalize()
 
-                    # --- 5. Find Thumbnail (Local first, then Generated) ---
+                    # --- Find Thumbnail (Local first, then Generated) ---
                     thumbnail_file_path = None
                     for img_ext in image_extensions:
                         potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
@@ -328,7 +320,31 @@ def _scan_videos_task():
                         except Exception as e:
                             print(f"  - Error checking for generated thumb: {e}")
 
-                    # --- 6. Parse NFO ---
+                    # --- NEW: Find Show Poster (poster.jpg) ---
+                    poster_path_to_save = None
+                    current_search_dir = os.path.dirname(video_file_path)
+                    try:
+                        while True:
+                            # Check if we are still inside the video_dir
+                            if not os.path.commonpath([video_dir, current_search_dir]) == video_dir:
+                                break
+                            
+                            potential_poster = os.path.join(current_search_dir, 'poster.jpg')
+                            if os.path.exists(potential_poster):
+                                poster_path_to_save = potential_poster
+                                break # Found the closest one
+                            
+                            # Check if we are at the root, if so, stop after this
+                            if os.path.samefile(current_search_dir, video_dir):
+                                break
+                            
+                            # Move up one directory
+                            current_search_dir = os.path.dirname(current_search_dir)
+                    except Exception as e:
+                        print(f"  - Error searching for poster.jpg: {e}")
+                    # --- END NEW ---
+
+                    # --- Parse NFO ---
                     title = None
                     show_title = None
                     plot = None
@@ -358,7 +374,7 @@ def _scan_videos_task():
                     if not aired_date: aired_date = uploaded_date 
                     if not plot: plot = ""
 
-                    # --- 7. Database Update ---
+                    # --- Database Update ---
                     try:
                         existing_video = Video.query.filter_by(video_path=video_file_path).first()
                         
@@ -371,6 +387,7 @@ def _scan_videos_task():
                             existing_video.youtube_id = youtube_id
                             if thumbnail_file_path:
                                 existing_video.thumbnail_path = thumbnail_file_path
+                            existing_video.show_poster_path = poster_path_to_save # --- ADD ---
                             existing_video.subtitle_path = srt_path
                             existing_video.subtitle_label = srt_label
                             existing_video.subtitle_lang = srt_lang
@@ -393,6 +410,7 @@ def _scan_videos_task():
                                 youtube_id=youtube_id,
                                 video_path=video_file_path,
                                 thumbnail_path=thumbnail_file_path,
+                                show_poster_path=poster_path_to_save, # --- ADD ---
                                 subtitle_path=srt_path,
                                 subtitle_label=srt_label,
                                 subtitle_lang=srt_lang,
@@ -411,7 +429,7 @@ def _scan_videos_task():
                         print(f"  - DB Error processing {video_file_path}: {e}")
                         db.session.rollback()
 
-                    # --- 8. Commit in Batches ---
+                    # --- Commit in Batches ---
                     current_progress = added_count + updated_count
                     if current_progress > 0 and current_progress % 50 == 0:
                         print(f"  - Committing batch of 50 to database...")
@@ -420,12 +438,12 @@ def _scan_videos_task():
                         sys.stdout.flush()
                         db.session.commit()
 
-            # --- 9. Final Commit for the loop ---
+            # --- Final Commit ---
             if added_count > 0 or updated_count > 0:
                 db.session.commit()
             print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
             
-            # --- 10. Pruning Logic ---
+            # --- Pruning Logic ---
             print("Starting prune of missing videos...")
             SCAN_STATUS['message'] = "Pruning deleted videos..."
             deleted_count = 0
@@ -469,7 +487,6 @@ def _scan_videos_task():
         db.session.rollback()
         SCAN_STATUS = {"status": "error", "message": str(e), "progress": 0}
     finally:
-        # No matter what, release the lock so another scan can run
         SCAN_LOCK.release()
         print("Scan lock released.")
         sys.stdout.flush()
@@ -563,14 +580,14 @@ def _generate_thumbnails_task():
                     result = subprocess.run([
                         "ffmpeg",
                         "-i", video_path,
-                        "-ss", "00:00:10", # Seek 10s in
+                        "-ss", "00:00:10",
                         "-vframes", "1",
                         "-q:v", "2",
-                        "-f", "image2pipe", # Format as an image pipe
-                        "pipe:1"            # Output to stdout
+                        "-f", "image2pipe",
+                        "pipe:1"
                     ], 
                     check=True, 
-                    capture_output=True # Capture stdout (binary) and stderr
+                    capture_output=True
                     )
 
                     if result.stdout:
@@ -600,13 +617,11 @@ def _generate_thumbnails_task():
                     sys.stdout.flush() 
                     db.session.rollback()
                 
-                # Commit in batches of 50
                 if generated_count > 0 and generated_count % 50 == 0:
                     print(f"  - Committing batch of 50 thumbnails to database...")
                     sys.stdout.flush()
                     db.session.commit()
             
-            # Commit any remaining items
             if generated_count > 0:
                 print("  - Committing final thumbnail batch to database...")
                 sys.stdout.flush()
@@ -620,10 +635,7 @@ def _generate_thumbnails_task():
             sys.stdout.flush() 
             db.session.rollback()
             THUMBNAIL_STATUS.update({
-                "status": "error",
-                "message": str(e),
-                "progress": 0,
-                "total": 0
+                "status": "error", "message": str(e), "progress": 0, "total": 0
             })
         finally:
             thumbnail_generation_lock.release()
@@ -631,10 +643,7 @@ def _generate_thumbnails_task():
             sys.stdout.flush()
             if THUMBNAIL_STATUS["status"] != "error":
                 THUMBNAIL_STATUS.update({
-                    "status": "idle",
-                    "message": f"Successfully generated {generated_count} thumbnails.",
-                    "progress": 0,
-                    "total": 0
+                    "status": "idle", "message": f"Successfully generated {generated_count} thumbnails.", "progress": 0, "total": 0
                 })
 
 
@@ -658,7 +667,6 @@ def initialize_database():
             print(f"Database already contains {video_count} videos.")
         print("Database initialization complete. Server is starting.")
 
-# Run initialization logic *outside* the __name__ == '__main__' block
 initialize_database()
 
 
@@ -693,21 +701,17 @@ def get_data():
 
 @app.route('/api/playlist/create', methods=['POST'])
 def create_playlist():
-    """Creates a new smart playlist."""
     data = request.get_json()
     name = data.get('name')
     if not name:
         return jsonify({"error": "Playlist name is required"}), 400
-    
     new_playlist = SmartPlaylist(name=name.strip())
     db.session.add(new_playlist)
     db.session.commit()
-    
     return jsonify(new_playlist.to_dict()), 201
 
 @app.route('/api/playlist/<int:playlist_id>/delete', methods=['POST'])
 def delete_playlist(playlist_id):
-    """Deletes a smart playlist by ID."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     db.session.delete(playlist)
     db.session.commit()
@@ -715,7 +719,6 @@ def delete_playlist(playlist_id):
 
 @app.route('/api/playlist/<int:playlist_id>/filter', methods=['POST'])
 def add_playlist_filter(playlist_id):
-    """Adds a new filter object to a smart playlist, checking for duplicates."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     new_filter = data.get('filter')
@@ -730,14 +733,12 @@ def add_playlist_filter(playlist_id):
         found_duplicate = False
 
         for f in filters_list:
-            if f.get('type') != new_type:
-                continue
+            if f.get('type') != new_type: continue
             is_match = False
             if isinstance(new_value, str) and isinstance(f.get('value'), str):
                 is_match = new_value.lower().strip() == f.get('value').lower().strip()
             elif isinstance(new_value, list) and isinstance(f.get('value'), list):
                 is_match = set(new_value) == set(f.get('value'))
-            
             if is_match:
                 found_duplicate = True
                 break
@@ -750,15 +751,12 @@ def add_playlist_filter(playlist_id):
         db.session.commit()
         return jsonify(playlist.to_dict()), 200
         
-    except json.JSONDecodeError:
-        return jsonify({"error": "Failed to decode existing playlist filters"}), 500
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/playlist/<int:playlist_id>/rename', methods=['POST'])
 def rename_playlist(playlist_id):
-    """Renames a smart playlist."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     name = data.get('name')
@@ -776,7 +774,6 @@ def rename_playlist(playlist_id):
 
 @app.route('/api/playlist/<int:playlist_id>/filter/remove', methods=['POST'])
 def remove_playlist_filter(playlist_id):
-    """Removes a specific filter object from a smart playlist."""
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     filter_id_to_remove = data.get('filterId')
@@ -791,8 +788,6 @@ def remove_playlist_filter(playlist_id):
         db.session.commit()
         return jsonify(playlist.to_dict()), 200
         
-    except json.JSONDecodeError:
-        return jsonify({"error": "Failed to decode existing playlist filters"}), 500
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
@@ -810,10 +805,9 @@ def stream_video(video_id):
     video_filename = os.path.basename(video.video_path)
     return send_from_directory(video_dir_path, video_filename, as_attachment=False, mimetype=mimetype)
 
-
 @app.route('/api/thumbnail/<int:video_id>')
 def get_thumbnail(video_id):
-    """Serves the thumbnail file."""
+    """Serves the video's generated thumbnail file."""
     video = Video.query.get_or_404(video_id)
     if not video.thumbnail_path or not os.path.exists(video.thumbnail_path):
         return jsonify({"error": "Thumbnail not found"}), 404
@@ -821,6 +815,19 @@ def get_thumbnail(video_id):
     thumb_filename = os.path.basename(video.thumbnail_path)
     mimetype = mimetypes.guess_type(video.thumbnail_path)[0] or 'image/jpeg'
     return send_from_directory(thumb_dir, thumb_filename, as_attachment=False, mimetype=mimetype)
+
+# --- NEW: API Route for Show Posters ---
+@app.route('/api/show_poster/<int:video_id>')
+def get_show_poster(video_id):
+    """Serves the video's associated show_poster.jpg file."""
+    video = Video.query.get_or_404(video_id)
+    if not video.show_poster_path or not os.path.exists(video.show_poster_path):
+        return jsonify({"error": "Show poster not found"}), 404
+    poster_dir = os.path.dirname(video.show_poster_path)
+    poster_filename = os.path.basename(video.show_poster_path)
+    mimetype = mimetypes.guess_type(video.show_poster_path)[0] or 'image/jpeg'
+    return send_from_directory(poster_dir, poster_filename, as_attachment=False, mimetype=mimetype)
+# --- END NEW ---
 
 @app.route('/api/subtitle/<int:video_id>')
 def get_subtitle(video_id):
@@ -856,7 +863,6 @@ def get_subtitle(video_id):
 
 @app.route('/api/article/<int:article_id>/favorite', methods=['POST'])
 def toggle_favorite(article_id):
-    """Toggles the 'is_favorite' status of a video."""
     video = Video.query.get_or_404(article_id)
     video.is_favorite = not video.is_favorite
     db.session.commit()
@@ -864,7 +870,6 @@ def toggle_favorite(article_id):
 
 @app.route('/api/article/<int:article_id>/bookmark', methods=['POST'])
 def toggle_watch_later(article_id):
-    """Toggles the 'is_watch_later' status of a video."""
     video = Video.query.get_or_404(article_id)
     video.is_watch_later = not video.is_watch_later
     db.session.commit()
@@ -872,9 +877,6 @@ def toggle_watch_later(article_id):
 
 @app.route('/api/video/<int:video_id>/progress', methods=['POST'])
 def update_video_progress(video_id):
-    """
-    Updates the watched duration and last watched timestamp for a video.
-    """
     video = Video.query.get_or_404(video_id)
     data = request.get_json()
     

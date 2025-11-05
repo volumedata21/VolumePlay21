@@ -23,7 +23,6 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
-
         /* Container for enforcing aspect ratio on thumbnails */
         .aspect-box {
             position: relative;
@@ -32,12 +31,10 @@
             /* Animate the aspect ratio change */
             transition: padding-top 0.3s ease-in-out;
         }
-
         /* 16:9 Aspect Ratio */
         .aspect-16-9 {
             padding-top: 56.25%;
         }
-
         /* 9:16 Aspect Ratio (for Shorts) */
         .aspect-9-16 {
             padding-top: 177.78%;
@@ -409,7 +406,8 @@
                 </div>
             </header>
 
-            <div class="grid grid-cols-1 gap-6 p-4" x-cloak :class="{
+            <div class="grid grid-cols-1 gap-6 p-4" x-cloak
+                 :class="{
                     'sm:grid-cols-2 lg:grid-cols-3': currentView.type !== 'shorts',
                     'sm:grid-cols-3 lg:grid-cols-5': currentView.type === 'shorts'
                  }">
@@ -419,41 +417,44 @@
 
                 <template x-for="video in filteredVideos" :key="video.id">
                     <div class="flex flex-col overflow-hidden rounded-lg bg-[var(--bg-medium)] shadow-lg">
-
+                        
                         <a href="#" @click.prevent="openModal(video)">
                             <template x-if="video.image_url">
                                 <div class="aspect-box"
-                                    :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
-
+                                     :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
+                                    
                                     <img class="absolute top-0 left-0 w-full h-full object-cover blur-lg scale-110 brightness-75"
-                                        :src="video.image_url" alt="" @error="$event.target.style.display='none'">
+                                        :src="video.image_url" alt=""
+                                        @error="$event.target.style.display='none'">
 
-                                    <img class="absolute top-0 left-0 w-full h-full" :class="{
+                                    <img class="absolute top-0 left-0 w-full h-full"
+                                         :class="{
                                             'object-contain': currentView.type !== 'shorts',
                                             'object-cover': currentView.type === 'shorts'
-                                         }" :src="video.image_url" alt=""
-                                        @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
-
+                                         }"
+                                         :src="video.image_url" alt=""
+                                         @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
+                                        
                                     <div
                                         class="no-thumb-text hidden absolute top-0 left-0 w-full h-full items-center justify-center text-[var(--text-secondary)]">
                                         (Image failed)</div>
 
                                     <div x-show="video.duration > 0"
-                                        class="absolute top-2 right-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
+                                         class="absolute top-2 right-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
                                         <span x-text="formatDuration(video.duration)"></span>
                                     </div>
                                 </div>
                             </template>
                             <template x-if="!video.image_url">
                                 <div class="aspect-box"
-                                    :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
+                                     :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
                                     <div
                                         class="absolute top-0 left-0 w-full h-full flex items-center justify-center text-[var(--text-secondary)]">
                                         (No Thumbnail)</div>
                                 </div>
                             </template>
                         </a>
-
+                        
                         <div class="flex flex-1 flex-col justify-between p-5">
                             <div class="flex-1">
                                 <h3 class="text-md font-semibold text-[var(--text-bright)] leading-tight"
@@ -465,28 +466,35 @@
                         </div>
 
                         <div
-                            class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5">
-
-                            <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
-                                <a href="#" @click.prevent="setView('author', null, video.author)"
-                                    class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors"
-                                    x-text="video.author"></a>
-
-                                <template x-if="video.is_short">
-                                    <a href="#"
-                                        @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
-                                        class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors"
-                                        style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
-                                        onmouseover="this.style.borderColor='#fff8e8'"
-                                        onmouseout="this.style.borderColor='#e16c39'"
-                                        :title="currentView.type === 'shorts' ? 'Clear Shorts filter' : 'Filter by Shorts'">
-                                        Short
-                                    </a>
+                            class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5 bg-[#182030]">
+                            
+                            <div class="min-w-0 flex-1 flex items-center gap-3">
+                                <template x-if="video.show_poster_url">
+                                    <img :src="video.show_poster_url" alt="Show Poster"
+                                         class="w-10 h-10 object-cover rounded-md flex-shrink-0">
                                 </template>
-                                <span class="block truncate text-xs mt-1 ml-2"
-                                    x-text="formatDateAgo(video.published, video.uploaded)"></span>
+                                
+                                <div class="text-sm text-[var(--text-secondary)]">
+                                    <a href="#" @click.prevent="setView('author', null, video.author)"
+                                        class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors"
+                                        x-text="video.author"></a>
+                                    
+                                    <template x-if="video.is_short">
+                                        <a href="#" 
+                                            @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
+                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors"
+                                            style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
+                                            onmouseover="this.style.borderColor='#fff8e8'"
+                                            onmouseout="this.style.borderColor='#e16c39'"
+                                            :title="currentView.type === 'shorts' ? 'Clear Shorts filter' : 'Filter by Shorts'">
+                                            Short
+                                        </a>
+                                    </template>
+                                    <span class="block truncate text-xs mt-1 ml-2"
+                                        x-text="formatDateAgo(video.published, video.uploaded)"></span>
+                                </div>
                             </div>
-
+                            
                             <div class="flex shrink-0 items-center gap-0">
                                 <button class="p-1" @click.prevent="toggleFavorite(video)"
                                     :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
@@ -501,7 +509,7 @@
                         </div>
                     </div>
                 </template>
-            </div>
+                </div>
 
             <div class="pb-8 text-center" x-show="fullFilteredList.length > videosToShow" x-cloak>
                 <p class="mb-2 text-xs text-[var(--text-secondary)]">
@@ -541,9 +549,9 @@
 
                     <div class="relative">
                         <div class="p-0 bg-black relative z-10">
-                            <video x-if="modalVideo" id="main-video-player"
-                                class="w-full max-h-[80vh] h-auto relative z-10" :src="modalVideo.video_url" controls
-                                autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous">
+                            <video x-if="modalVideo" id="main-video-player" class="w-full max-h-[80vh] h-auto relative z-10"
+                                :src="modalVideo.video_url" controls autoplay @ended="handleVideoEnd()" x-ref="videoPlayer"
+                                crossorigin="anonymous">
 
                                 <template x-if="modalVideo.subtitle_url">
                                     <track :label="modalVideo.subtitle_label" kind="subtitles"
@@ -553,25 +561,29 @@
                                 Your browser does not support the video tag.
                             </video>
                         </div>
-                        <div
-                            class="absolute bottom-0 left-[10%] w-[80%] h-8 bg-white blur-3xl opacity-40 transform translate-y-1/2">
-                        </div>
+                        <div class="absolute bottom-0 left-[10%] w-[80%] h-8 bg-white blur-3xl opacity-40 transform translate-y-1/2"></div>
                     </div>
 
                     <div class="p-4 sm:p-5">
-
+                        
                         <div class="lg:flex lg:gap-x-8">
 
                             <div class="lg:w-2/3">
 
-                                <div>
-                                    <a href="#" @click.prevent="navigateToAuthorFilter(modalVideo.author)"
-                                        class="text-sm font-bold text-[var(--text-highlight)] hover:underline"
-                                        x-text="modalVideo.author || 'Unknown Author'">
-                                    </a>
-                                    <span class="block text-sm text-[var(--text-secondary)]"
-                                        x-text="getAuthorVideoCount(modalVideo.author) + ' Videos'">
-                                    </span>
+                                <div class="flex items-center gap-3">
+                                    <template x-if="modalVideo.show_poster_url">
+                                        <img :src="modalVideo.show_poster_url" alt="Show Poster"
+                                             class="w-12 h-12 object-cover rounded-lg flex-shrink-0">
+                                    </template>
+                                    <div>
+                                        <a href="#" @click.prevent="navigateToAuthorFilter(modalVideo.author)"
+                                            class="text-sm font-bold text-[var(--text-highlight)] hover:underline"
+                                            x-text="modalVideo.author || 'Unknown Author'">
+                                        </a>
+                                        <span class="block text-sm text-[var(--text-secondary)]"
+                                            x-text="getAuthorVideoCount(modalVideo.author) + ' Videos'">
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div class="mt-4 border-t border-[var(--divider-color)] pt-4">
@@ -615,8 +627,7 @@
                                             <i class="material-icons" style="font-size: 20px;">download</i>
                                             <span>Download</span>
                                         </a>
-                                        <button
-                                            @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
+                                        <button @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Scroll to file details">
                                             <i class="material-icons" style="font-size: 20px;">info</i>
@@ -638,9 +649,7 @@
                                     </div>
                                 </div>
 
-                                <div id="more-info-panel"
-                                    class="mt-4 border-t border-[var(--divider-color)] pt-4 text-[var(--text-main)]"
-                                    x-cloak>
+                                <div id="more-info-panel" class="mt-4 border-t border-[var(--divider-color)] pt-4 text-[var(--text-main)]" x-cloak>
                                     <div class="prose prose-sm prose-invert max-w-none space-y-3">
                                         <div>
                                             <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Filename</h4>
@@ -659,16 +668,15 @@
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Format</h4>
                                                 <p class="!mt-0.5" x-text="modalVideo.file_format"></p>
+
                                             </div>
                                             <div>
-                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions
-                                                </h4>
+                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions</h4>
                                                 <p class="!mt-0.5" x-text="modalVideo.dimensions || 'Unknown'"></p>
                                             </div>
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Length</h4>
-                                                <p class="!mt-0.5"
-                                                    x-text="formatDuration(modalVideo.duration) || 'N/A'"></p>
+                                                <p class="!mt-0.5" x-text="formatDuration(modalVideo.duration) || 'N/A'"></p>
                                             </div>
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Codec</h4>
@@ -743,8 +751,7 @@
                                         <i class="material-icons" style="font-size: 20px;">download</i>
                                         <span>Download</span>
                                     </a>
-                                    <button
-                                        @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
+                                    <button @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         title="Scroll to file details">
                                         <i class="material-icons" style="font-size: 20px;">info</i>
@@ -766,6 +773,6 @@
             </template>
         </div>
     </div>
-</body>
+    </body>
 
 </html>
