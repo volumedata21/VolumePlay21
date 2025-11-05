@@ -51,38 +51,44 @@ SCAN_STATUS = {
     "progress": 0
 }
 
+TRANSCODE_LOCK = threading.Lock()
+TRANSCODE_STATUS = {
+    "status": "idle", # idle, transcoding, error
+    "message": "",
+    "video_id": None
+}
+
 ## --- Database Models ---
 
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(300), nullable=False)
-    show_title = db.Column(db.String(200))
-    summary = db.Column(db.Text)
-    video_path = db.Column(db.String(1000), unique=True, nullable=False)
-    thumbnail_path = db.Column(db.String(1000))
-    # --- NEW: Path to the show-level poster.jpg ---
-    show_poster_path = db.Column(db.String(1000), nullable=True)
-    # --- END NEW ---
-    subtitle_path = db.Column(db.String(1000), nullable=True)
-    subtitle_label = db.Column(db.String(50), nullable=True)
-    subtitle_lang = db.Column(db.String(10), nullable=True)
-    aired = db.Column(db.DateTime(timezone=False))
-    uploaded_date = db.Column(db.DateTime(timezone=False))
-    youtube_id = db.Column(db.String(100), nullable=True)
+    title = db.Column(db.String(300), nullable=False)           # From NFO <title> or filename
+    show_title = db.Column(db.String(200))                     # From NFO <showtitle> or folder name
+    summary = db.Column(db.Text)                               # From NFO <plot>
+    video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
+    thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
+    show_poster_path = db.Column(db.String(1000), nullable=True) # Path to the show-level poster.jpg
+    subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
+    subtitle_label = db.Column(db.String(50), nullable=True)   # e.g., "English" or "CC On"
+    subtitle_lang = db.Column(db.String(10), nullable=True)    # e.g., "en"
+    aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
+    uploaded_date = db.Column(db.DateTime(timezone=False))     # File mtime
+    youtube_id = db.Column(db.String(100), nullable=True)      # From NFO <uniqueid>
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
     last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
-    watched_duration = db.Column(db.Integer, default=0)
+    watched_duration = db.Column(db.Integer, default=0) # Stored in seconds
 
     # --- Technical Info ---
-    filename = db.Column(db.String(500), nullable=True)
-    file_size = db.Column(db.BigInteger, nullable=True)
-    file_format = db.Column(db.String(10), nullable=True)
-    has_nfo = db.Column(db.Boolean, default=False)
-    is_short = db.Column(db.Boolean, default=False)
-    dimensions = db.Column(db.String(100), nullable=True)
-    duration = db.Column(db.Integer, default=0)
-    video_codec = db.Column(db.String(50), nullable=True)
+    filename = db.Column(db.String(500), nullable=True)        # The video's filename (e.g., "video.mp4")
+    file_size = db.Column(db.BigInteger, nullable=True)        # Filesize in bytes
+    file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
+    has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
+    is_short = db.Column(db.Boolean, default=False)            # True if height > width
+    dimensions = db.Column(db.String(100), nullable=True)      # e.g., "1920x1080"
+    duration = db.Column(db.Integer, default=0)                # Duration in seconds
+    video_codec = db.Column(db.String(50), nullable=True)      # e.g., "h264", "hevc"
+    transcoded_path = db.Column(db.String(1000), nullable=True) # Path to the optimized MP4
 
     def to_dict(self):
         """
@@ -117,9 +123,7 @@ class Video(db.Model):
             
             'video_url': f'/api/video/{self.id}',
             'image_url': f'/api/thumbnail/{self.id}' if self.thumbnail_path else None,
-            # --- NEW: API URL for the show poster ---
             'show_poster_url': f'/api/show_poster/{self.id}' if self.show_poster_path else None,
-            # --- END NEW ---
             'subtitle_url': f'/api/subtitle/{self.id}' if self.subtitle_path else None,
             'subtitle_label': self.subtitle_label or 'Subtitles',
             'subtitle_lang': self.subtitle_lang or 'en',
@@ -143,7 +147,10 @@ class Video(db.Model):
             'is_short': self.is_short,
             'dimensions': self.dimensions,
             'duration': self.duration,
-            'video_codec': self.video_codec
+            'video_codec': self.video_codec,
+            'has_transcode': bool(self.transcoded_path),
+            'transcode_url': f'/api/video/{self.id}/stream_transcoded' if self.transcoded_path else None,
+            'transcode_download_url': f'/api/video/{self.id}/download_transcoded' if self.transcoded_path else None
         }
 
 # SmartPlaylist Model
@@ -182,6 +189,7 @@ def _scan_videos_task():
             video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
             image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
 
+            # --- 1. Walk the directory ---
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
@@ -195,6 +203,7 @@ def _scan_videos_task():
                     if file_ext not in video_extensions:
                         continue
 
+                    # --- 2. Gather File Info & Path ---
                     video_file_path = os.path.normpath(os.path.join(dirpath, filename))
                     found_video_paths.add(video_file_path)
 
@@ -213,7 +222,7 @@ def _scan_videos_task():
                     nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
                     has_nfo_file = os.path.exists(nfo_path)
 
-                    # --- Get Technical Metadata ---
+                    # --- 3. Run ffprobe to get Technical Metadata ---
                     is_short = False
                     effective_width = 0
                     effective_height = 0
@@ -272,7 +281,7 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
 
-                    # --- Find Subtitles ---
+                    # --- 4. Find Subtitles ---
                     srt_path = None
                     srt_label = None
                     srt_lang = None
@@ -296,7 +305,7 @@ def _scan_videos_task():
                         srt_lang = best_track['lang'].split('.')[0]
                         srt_label = "English" if srt_lang == "en" else srt_lang.capitalize()
 
-                    # --- Find Thumbnail (Local first, then Generated) ---
+                    # --- 5. Find Thumbnail (Local first, then Generated) ---
                     thumbnail_file_path = None
                     for img_ext in image_extensions:
                         potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
@@ -320,31 +329,33 @@ def _scan_videos_task():
                         except Exception as e:
                             print(f"  - Error checking for generated thumb: {e}")
 
-                    # --- NEW: Find Show Poster (poster.jpg) ---
+                    # --- 6. Find Show Poster (poster.jpg) ---
                     poster_path_to_save = None
                     current_search_dir = os.path.dirname(video_file_path)
                     try:
                         while True:
-                            # Check if we are still inside the video_dir
                             if not os.path.commonpath([video_dir, current_search_dir]) == video_dir:
                                 break
-                            
                             potential_poster = os.path.join(current_search_dir, 'poster.jpg')
                             if os.path.exists(potential_poster):
                                 poster_path_to_save = potential_poster
-                                break # Found the closest one
-                            
-                            # Check if we are at the root, if so, stop after this
+                                break
                             if os.path.samefile(current_search_dir, video_dir):
                                 break
-                            
-                            # Move up one directory
                             current_search_dir = os.path.dirname(current_search_dir)
                     except Exception as e:
                         print(f"  - Error searching for poster.jpg: {e}")
-                    # --- END NEW ---
 
-                    # --- Parse NFO ---
+                    # --- 7. Find Existing Transcode ---
+                    transcoded_file_path = None
+                    try:
+                        potential_transcode = get_transcoded_path_for_video(video_file_path)
+                        if os.path.exists(potential_transcode):
+                            transcoded_file_path = potential_transcode
+                    except Exception as e:
+                        print(f"  - Error checking for transcoded file: {e}")
+
+                    # --- 8. Parse NFO ---
                     title = None
                     show_title = None
                     plot = None
@@ -374,7 +385,7 @@ def _scan_videos_task():
                     if not aired_date: aired_date = uploaded_date 
                     if not plot: plot = ""
 
-                    # --- Database Update ---
+                    # --- 9. Database Update ---
                     try:
                         existing_video = Video.query.filter_by(video_path=video_file_path).first()
                         
@@ -387,7 +398,7 @@ def _scan_videos_task():
                             existing_video.youtube_id = youtube_id
                             if thumbnail_file_path:
                                 existing_video.thumbnail_path = thumbnail_file_path
-                            existing_video.show_poster_path = poster_path_to_save # --- ADD ---
+                            existing_video.show_poster_path = poster_path_to_save
                             existing_video.subtitle_path = srt_path
                             existing_video.subtitle_label = srt_label
                             existing_video.subtitle_lang = srt_lang
@@ -399,6 +410,7 @@ def _scan_videos_task():
                             existing_video.dimensions = f"{effective_width}x{effective_height}"
                             existing_video.duration = duration_sec
                             existing_video.video_codec = video_codec
+                            existing_video.transcoded_path = transcoded_file_path
                             updated_count += 1
                         else:
                             new_video = Video(
@@ -410,7 +422,7 @@ def _scan_videos_task():
                                 youtube_id=youtube_id,
                                 video_path=video_file_path,
                                 thumbnail_path=thumbnail_file_path,
-                                show_poster_path=poster_path_to_save, # --- ADD ---
+                                show_poster_path=poster_path_to_save,
                                 subtitle_path=srt_path,
                                 subtitle_label=srt_label,
                                 subtitle_lang=srt_lang,
@@ -421,7 +433,8 @@ def _scan_videos_task():
                                 is_short=is_short,
                                 dimensions=f"{effective_width}x{effective_height}",
                                 duration=duration_sec,
-                                video_codec=video_codec
+                                video_codec=video_codec,
+                                transcoded_path=transcoded_file_path
                             )
                             db.session.add(new_video)
                             added_count += 1
@@ -429,7 +442,7 @@ def _scan_videos_task():
                         print(f"  - DB Error processing {video_file_path}: {e}")
                         db.session.rollback()
 
-                    # --- Commit in Batches ---
+                    # --- 10. Commit in Batches ---
                     current_progress = added_count + updated_count
                     if current_progress > 0 and current_progress % 50 == 0:
                         print(f"  - Committing batch of 50 to database...")
@@ -438,12 +451,12 @@ def _scan_videos_task():
                         sys.stdout.flush()
                         db.session.commit()
 
-            # --- Final Commit ---
+            # --- 11. Final Commit ---
             if added_count > 0 or updated_count > 0:
                 db.session.commit()
             print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
             
-            # --- Pruning Logic ---
+            # --- 12. Pruning Logic ---
             print("Starting prune of missing videos...")
             SCAN_STATUS['message'] = "Pruning deleted videos..."
             deleted_count = 0
@@ -459,6 +472,16 @@ def _scan_videos_task():
                     for path in paths_to_delete:
                         video_data = db_video_map[path]
                         
+                        # Delete associated transcode
+                        try:
+                            transcoded_path = get_transcoded_path_for_video(video_data.video_path)
+                            if os.path.exists(transcoded_path):
+                                os.remove(transcoded_path)
+                                print(f"  - Deleted transcoded file: {transcoded_path}")
+                        except Exception as e:
+                            print(f"  - Error deleting transcoded file {transcoded_path}: {e}")
+                        
+                        # Delete associated thumbnail
                         if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
                             try:
                                 os.remove(video_data.thumbnail_path)
@@ -466,6 +489,7 @@ def _scan_videos_task():
                             except OSError as e:
                                 print(f"  - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
                         
+                        # Delete video from DB
                         db.session.query(Video).filter(Video.id == video_data.id).delete()
                         print(f"  - Deleted video record: {video_data.video_path}")
                         deleted_count += 1
@@ -515,6 +539,16 @@ def get_thumbnail_path_for_video(video_path):
     hash_name = hashlib.md5(video_path.encode('utf-8')).hexdigest()
     thumb_dir = os.path.join(data_dir, 'thumbnails')
     return os.path.join(thumb_dir, f"{hash_name}.jpg")
+
+def get_transcoded_path_for_video(video_path):
+    """
+    Generates a persistent path for a transcoded file.
+    e.g., /data/optimized/a1b2c3d4_opt.mp4
+    """
+    hash_name = hashlib.md5(video_path.encode('utf-8')).hexdigest()
+    transcode_dir = os.path.join(data_dir, 'optimized')
+    os.makedirs(transcode_dir, exist_ok=True)
+    return os.path.join(transcode_dir, f"{hash_name}_opt.mp4")
 
 def srt_to_vtt(srt_content):
     """
@@ -646,6 +680,62 @@ def _generate_thumbnails_task():
                     "status": "idle", "message": f"Successfully generated {generated_count} thumbnails.", "progress": 0, "total": 0
                 })
 
+def _transcode_video_task(video_id):
+    """
+    Runs the ffmpeg transcode process in a background thread.
+    """
+    global TRANSCODE_STATUS
+    try:
+        with app.app_context():
+            video = Video.query.get(video_id)
+            if not video:
+                raise Exception(f"Video ID {video_id} not found.")
+            
+            TRANSCODE_STATUS = {
+                "status": "transcoding",
+                "message": f"Starting optimization for: {video.filename}",
+                "video_id": video_id
+            }
+            
+            input_path = video.video_path
+            output_path = get_transcoded_path_for_video(input_path)
+
+            if os.path.exists(output_path):
+                print(f"  - Transcoded file already exists: {output_path}")
+            else:
+                ffmpeg_cmd = [
+                    'ffmpeg',
+                    '-i', input_path,
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '23',
+                    '-vf', "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    '-movflags', '+faststart',
+                    output_path
+                ]
+                
+                print(f"  - Starting transcode: {' '.join(ffmpeg_cmd)}")
+                subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
+            
+            video.transcoded_path = output_path
+            db.session.commit()
+            print(f"  - Transcode complete: {output_path}")
+            
+            TRANSCODE_STATUS = {"status": "idle", "message": "Transcode complete.", "video_id": None}
+
+    except subprocess.CalledProcessError as e:
+        print(f"  - FFmpeg error during transcode: {e.stderr.decode('utf-8', errors='ignore')}")
+        TRANSCODE_STATUS = {"status": "error", "message": "FFmpeg failed.", "video_id": video_id}
+    except Exception as e:
+        print(f"  - Error during transcode task: {e}")
+        db.session.rollback()
+        TRANSCODE_STATUS = {"status": "error", "message": str(e), "video_id": video_id}
+    finally:
+        TRANSCODE_LOCK.release()
+        print("Transcode lock released.")
+        sys.stdout.flush()
 
 ## --- Initialization Function ---
 def initialize_database():
@@ -796,7 +886,7 @@ def remove_playlist_filter(playlist_id):
 
 @app.route('/api/video/<int:video_id>')
 def stream_video(video_id):
-    """Streams the video file."""
+    """Streams the original video file."""
     video = Video.query.get_or_404(video_id)
     if not os.path.exists(video.video_path):
         return jsonify({"error": "Video file not found"}), 404
@@ -816,7 +906,6 @@ def get_thumbnail(video_id):
     mimetype = mimetypes.guess_type(video.thumbnail_path)[0] or 'image/jpeg'
     return send_from_directory(thumb_dir, thumb_filename, as_attachment=False, mimetype=mimetype)
 
-# --- NEW: API Route for Show Posters ---
 @app.route('/api/show_poster/<int:video_id>')
 def get_show_poster(video_id):
     """Serves the video's associated show_poster.jpg file."""
@@ -827,7 +916,6 @@ def get_show_poster(video_id):
     poster_filename = os.path.basename(video.show_poster_path)
     mimetype = mimetypes.guess_type(video.show_poster_path)[0] or 'image/jpeg'
     return send_from_directory(poster_dir, poster_filename, as_attachment=False, mimetype=mimetype)
-# --- END NEW ---
 
 @app.route('/api/subtitle/<int:video_id>')
 def get_subtitle(video_id):
@@ -916,7 +1004,7 @@ def scan_videos_route():
         return jsonify({"message": "Scan started in background."}), 202
     except Exception as e:
         SCAN_LOCK.release()
-        SCAN_STATUS = {"status": "error", "message": str(e)}
+        SCAN_STATUS = {"status": "error", "message": str(e), "progress": 0}
         print(f"API: Failed to start scan: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
@@ -953,6 +1041,14 @@ def generate_missing_thumbnails_route():
         THUMBNAIL_STATUS.update({"status": "error", "message": str(e)})
         return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
 
+@app.route('/api/scan/status', methods=['GET'])
+def get_scan_status():
+    """
+    Returns the current status of the video scan task.
+    """
+    global SCAN_STATUS
+    return jsonify(SCAN_STATUS)
+    
 @app.route('/api/thumbnails/status', methods=['GET'])
 def get_thumbnail_status():
     """
@@ -961,13 +1057,75 @@ def get_thumbnail_status():
     global THUMBNAIL_STATUS
     return jsonify(THUMBNAIL_STATUS)
 
-@app.route('/api/scan/status', methods=['GET'])
-def get_scan_status():
+@app.route('/api/transcode/status', methods=['GET'])
+def get_transcode_status():
     """
-    Returns the current status of the video scan task.
+    Returns the current status of the video transcode task.
     """
-    global SCAN_STATUS
-    return jsonify(SCAN_STATUS)
+    global TRANSCODE_STATUS
+    return jsonify(TRANSCODE_STATUS)
+
+@app.route('/api/video/<int:video_id>/stream_transcoded')
+def stream_transcoded_video(video_id):
+    """Streams the transcoded video file."""
+    video = Video.query.get_or_404(video_id)
+    if not video.transcoded_path or not os.path.exists(video.transcoded_path):
+        return jsonify({"error": "Transcoded file not found"}), 404
+    mimetype = 'video/mp4' # Transcodes are always MP4
+    video_dir_path = os.path.dirname(video.transcoded_path)
+    video_filename = os.path.basename(video.transcoded_path)
+    return send_from_directory(video_dir_path, video_filename, as_attachment=False, mimetype=mimetype)
+
+@app.route('/api/video/<int:video_id>/download_transcoded')
+def download_transcoded_video(video_id):
+    """Downloads the transcoded video file."""
+    video = Video.query.get_or_404(video_id)
+    if not video.transcoded_path or not os.path.exists(video.transcoded_path):
+        return jsonify({"error": "Transcoded file not found"}), 404
+    
+    base_filename = os.path.splitext(video.filename)[0]
+    download_name = f"{base_filename}_Optimized.mp4"
+    
+    video_dir_path = os.path.dirname(video.transcoded_path)
+    video_filename = os.path.basename(video.transcoded_path)
+    return send_from_directory(video_dir_path, video_filename, as_attachment=True, download_name=download_name)
+
+@app.route('/api/video/<int:video_id>/transcode/start', methods=['POST'])
+def start_transcode_route(video_id):
+    """Triggers a background task to transcode a specific video."""
+    if not TRANSCODE_LOCK.acquire(blocking=False):
+        return jsonify({"message": "A transcode is already in progress."}), 409
+    
+    try:
+        print(f"API: Starting transcode for video ID {video_id}...")
+        TRANSCODE_STATUS = {"status": "starting", "message": "Starting transcode...", "video_id": video_id}
+        scan_thread = threading.Thread(target=_transcode_video_task, args=(video_id,))
+        scan_thread.start()
+        return jsonify({"message": "Transcode started in background."}), 202
+    except Exception as e:
+        TRANSCODE_LOCK.release()
+        TRANSCODE_STATUS = {"status": "error", "message": str(e), "video_id": video_id}
+        print(f"API: Failed to start transcode: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/video/<int:video_id>/transcode/delete', methods=['POST'])
+def delete_transcode_route(video_id):
+    """Deletes a transcoded video file."""
+    video = Video.query.get_or_404(video_id)
+    if not video.transcoded_path:
+        return jsonify({"error": "No transcode to delete."}), 404
+    
+    try:
+        if os.path.exists(video.transcoded_path):
+            os.remove(video.transcoded_path)
+            print(f"  - Deleted transcoded file: {video.transcoded_path}")
+        
+        video.transcoded_path = None
+        db.session.commit()
+        return jsonify(video.to_dict()), 200 # Return updated video
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 ## --- Main Execution ---

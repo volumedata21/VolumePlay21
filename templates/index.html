@@ -23,6 +23,7 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
+
         /* Container for enforcing aspect ratio on thumbnails */
         .aspect-box {
             position: relative;
@@ -468,21 +469,18 @@
                         <div
                             class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5 bg-[#182030]">
                             
-                            <div class="min-w-0 flex-1 flex items-center gap-3">
-                                <template x-if="video.show_poster_url">
-                                    <img :src="video.show_poster_url" alt="Show Poster"
-                                         class="w-10 h-10 object-cover rounded-md flex-shrink-0">
-                                </template>
+                            <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
                                 
-                                <div class="text-sm text-[var(--text-secondary)]">
+                                <div class="flex items-center">
+                                    
                                     <a href="#" @click.prevent="setView('author', null, video.author)"
-                                        class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors"
+                                        class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors truncate flex-shrink"
                                         x-text="video.author"></a>
                                     
                                     <template x-if="video.is_short">
                                         <a href="#" 
                                             @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
-                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors"
+                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
                                             style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
                                             onmouseover="this.style.borderColor='#fff8e8'"
                                             onmouseout="this.style.borderColor='#e16c39'"
@@ -490,9 +488,10 @@
                                             Short
                                         </a>
                                     </template>
-                                    <span class="block truncate text-xs mt-1 ml-2"
-                                        x-text="formatDateAgo(video.published, video.uploaded)"></span>
                                 </div>
+
+                                <span class="block truncate text-xs mt-1 ml-2"
+                                    x-text="formatDateAgo(video.published, video.uploaded)"></span>
                             </div>
                             
                             <div class="flex shrink-0 items-center gap-0">
@@ -550,7 +549,7 @@
                     <div class="relative">
                         <div class="p-0 bg-black relative z-10">
                             <video x-if="modalVideo" id="main-video-player" class="w-full max-h-[80vh] h-auto relative z-10"
-                                :src="modalVideo.video_url" controls autoplay @ended="handleVideoEnd()" x-ref="videoPlayer"
+                                :src="currentVideoSrc" controls autoplay @ended="handleVideoEnd()" x-ref="videoPlayer"
                                 crossorigin="anonymous">
 
                                 <template x-if="modalVideo.subtitle_url">
@@ -600,33 +599,19 @@
                                     <div class="grid grid-cols-2 gap-2">
                                         <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            @click.prevent="toggleFavorite(modalVideo)">
-                                            <i class="material-icons" style="font-size: 20px;"
-                                                x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
-                                            <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
-                                        </button>
-                                        <button
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             @click.prevent="toggleBookmark(modalVideo)">
                                             <i class="material-icons" style="font-size: 20px;"
                                                 x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i>
                                             <span x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
                                         </button>
-                                        <template x-if="modalVideo.youtube_id">
-                                            <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
-                                                target="_blank"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
-                                                title="Watch on YouTube">
-                                                <i class="material-icons" style="font-size: 20px;">smart_display</i>
-                                                <span>YouTube</span>
-                                            </a>
-                                        </template>
-                                        <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                        <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Download video file">
-                                            <i class="material-icons" style="font-size: 20px;">download</i>
-                                            <span>Download</span>
-                                        </a>
+                                            @click.prevent="toggleFavorite(modalVideo)">
+                                            <i class="material-icons" style="font-size: 20px;"
+                                                x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
+                                            <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
+                                        </button>
+
                                         <button @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Scroll to file details">
@@ -639,6 +624,52 @@
                                             <i class="material-icons" style="font-size: 20px;">speed</i>
                                             <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                         </button>
+
+                                        <template x-if="!modalVideo.has_transcode && !isTranscoding">
+                                            <button @click.prevent="startTranscode(modalVideo)"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                                <span>Optimize</span>
+                                            </button>
+                                        </template>
+                                        <template x-if="isTranscoding && modalVideo.id === transcodeStatus.video_id">
+                                            <button disabled
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                                <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                <span>Optimizing...</span>
+                                            </button>
+                                        </template>
+                                        <template x-if="modalVideo.has_transcode && !isTranscoding">
+                                            <button @click.prevent="deleteTranscode(modalVideo)"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                <span>Remove Optimized</span>
+                                            </button>
+                                        </template>
+                                        <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                            title="Download original file">
+                                            <i class="material-icons" style="font-size: 20px;">download</i>
+                                            <span>Download</span>
+                                        </a>
+
+                                        <template x-if="modalVideo.has_transcode">
+                                            <a :href="modalVideo.transcode_download_url"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                                title="Download optimized MP4">
+                                                <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                                <span>Optimized</span>
+                                            </a>
+                                        </template>
+                                        <template x-if="modalVideo.youtube_id">
+                                            <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
+                                                target="_blank"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
+                                                title="Watch on YouTube">
+                                                <i class="material-icons" style="font-size: 20px;">smart_display</i>
+                                                <span>YouTube</span>
+                                            </a>
+                                        </template>
                                     </div>
                                 </div>
 
@@ -668,7 +699,6 @@
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Format</h4>
                                                 <p class="!mt-0.5" x-text="modalVideo.file_format"></p>
-
                                             </div>
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions</h4>
@@ -724,33 +754,19 @@
                                 <div class="grid grid-cols-2 gap-2">
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        @click.prevent="toggleFavorite(modalVideo)">
-                                        <i class="material-icons" style="font-size: 20px;"
-                                            x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
-                                        <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
-                                    </button>
-                                    <button
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         @click.prevent="toggleBookmark(modalVideo)">
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i>
                                         <span x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
                                     </button>
-                                    <template x-if="modalVideo.youtube_id">
-                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
-                                            target="_blank"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
-                                            title="Watch on YouTube">
-                                            <i class="material-icons" style="font-size: 20px;">smart_display</i>
-                                            <span>YouTube</span>
-                                        </a>
-                                    </template>
-                                    <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                    <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        title="Download video file">
-                                        <i class="material-icons" style="font-size: 20px;">download</i>
-                                        <span>Download</span>
-                                    </a>
+                                        @click.prevent="toggleFavorite(modalVideo)">
+                                        <i class="material-icons" style="font-size: 20px;"
+                                            x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
+                                        <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
+                                    </button>
+                                    
                                     <button @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         title="Scroll to file details">
@@ -763,6 +779,52 @@
                                         <i class="material-icons" style="font-size: 20px;">speed</i>
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
+
+                                    <template x-if="!modalVideo.has_transcode && !isTranscoding">
+                                        <button @click.prevent="startTranscode(modalVideo)"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                            <span>Optimize</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="isTranscoding && modalVideo.id === transcodeStatus.video_id">
+                                        <button disabled
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                            <span>Optimizing...</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="modalVideo.has_transcode && !isTranscoding">
+                                        <button @click.prevent="deleteTranscode(modalVideo)"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                            <span>Remove Optimized</span>
+                                        </button>
+                                    </template>
+                                    <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                        title="Download original file">
+                                        <i class="material-icons" style="font-size: 20px;">download</i>
+                                        <span>Download</span>
+                                    </a>
+
+                                    <template x-if="modalVideo.has_transcode">
+                                        <a :href="modalVideo.transcode_download_url"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                            title="Download optimized MP4">
+                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                            <span>Optimized</span>
+                                        </a>
+                                    </template>
+                                    <template x-if="modalVideo.youtube_id">
+                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
+                                            target="_blank"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
+                                            title="Watch on YouTube">
+                                            <i class="material-icons" style="font-size: 20px;">smart_display</i>
+                                            <span>YouTube</span>
+                                        </a>
+                                    </template>
                                 </div>
                             </div>
 
