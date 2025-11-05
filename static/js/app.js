@@ -15,7 +15,6 @@ function videoApp() {
         // --- END NEW ---
 
         isAutoplayEnabled: true, // NEW: Autoplay state (default on)
-        isInfoPanelOpen: false, // NEW: For the "More Info" panel
         currentPlaybackSpeed: 1.0,
         playbackRates: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
         // currentView is locally shadowed for reactive use in the component
@@ -592,7 +591,6 @@ function videoApp() {
         openModal(video) {
             this.modalVideo = video;
             this.isModalOpen = true;
-            this.isInfoPanelOpen = false; // NEW: Reset panel on open
 
             this.$nextTick(() => {
                 if (this.$refs.videoPlayer) {
@@ -625,7 +623,6 @@ function videoApp() {
             // CRITICAL: Stop video playback and save progress
             this.stopAndSaveVideo();
 
-            this.isInfoPanelOpen = false; // NEW: Reset panel on close
             this.isModalOpen = false;
             this.modalVideo = null;
         },
