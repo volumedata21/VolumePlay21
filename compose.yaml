@@ -7,6 +7,7 @@ services:
     volumes:
       - ./videos:/videos:ro # Mounts your local videos folder as read-only
       - ./data:/data # Mounts local ./data folder for the persistent database
+      # To hide a folder, create a file called 'vd21_hide' and scanner will ignore folder and subfolders.
     environment:
       - DATA_DIR=/data
       - VIDEO_DIR=/videos

@@ -62,33 +62,33 @@ TRANSCODE_STATUS = {
 
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(300), nullable=False)           # From NFO <title> or filename
-    show_title = db.Column(db.String(200))                     # From NFO <showtitle> or folder name
-    summary = db.Column(db.Text)                               # From NFO <plot>
-    video_path = db.Column(db.String(1000), unique=True, nullable=False) # Full path to the video file
-    thumbnail_path = db.Column(db.String(1000))                # Full path to the thumbnail file
-    show_poster_path = db.Column(db.String(1000), nullable=True) # Path to the show-level poster.jpg
-    subtitle_path = db.Column(db.String(1000), nullable=True)  # Full path to the .srt file
-    subtitle_label = db.Column(db.String(50), nullable=True)   # e.g., "English" or "CC On"
-    subtitle_lang = db.Column(db.String(10), nullable=True)    # e.g., "en"
-    aired = db.Column(db.DateTime(timezone=False))             # From NFO <aired>
-    uploaded_date = db.Column(db.DateTime(timezone=False))     # File mtime
-    youtube_id = db.Column(db.String(100), nullable=True)      # From NFO <uniqueid>
+    title = db.Column(db.String(300), nullable=False)
+    show_title = db.Column(db.String(200))
+    summary = db.Column(db.Text)
+    video_path = db.Column(db.String(1000), unique=True, nullable=False)
+    thumbnail_path = db.Column(db.String(1000))
+    show_poster_path = db.Column(db.String(1000), nullable=True)
+    subtitle_path = db.Column(db.String(1000), nullable=True)
+    subtitle_label = db.Column(db.String(50), nullable=True)
+    subtitle_lang = db.Column(db.String(10), nullable=True)
+    aired = db.Column(db.DateTime(timezone=False))
+    uploaded_date = db.Column(db.DateTime(timezone=False))
+    youtube_id = db.Column(db.String(100), nullable=True)
     is_favorite = db.Column(db.Boolean, default=False)
     is_watch_later = db.Column(db.Boolean, default=False)
     last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
-    watched_duration = db.Column(db.Integer, default=0) # Stored in seconds
+    watched_duration = db.Column(db.Integer, default=0)
 
     # --- Technical Info ---
-    filename = db.Column(db.String(500), nullable=True)        # The video's filename (e.g., "video.mp4")
-    file_size = db.Column(db.BigInteger, nullable=True)        # Filesize in bytes
-    file_format = db.Column(db.String(10), nullable=True)      # e.g., "mp4", "mkv"
-    has_nfo = db.Column(db.Boolean, default=False)             # True if .nfo file exists
-    is_short = db.Column(db.Boolean, default=False)            # True if height > width
-    dimensions = db.Column(db.String(100), nullable=True)      # e.g., "1920x1080"
-    duration = db.Column(db.Integer, default=0)                # Duration in seconds
-    video_codec = db.Column(db.String(50), nullable=True)      # e.g., "h264", "hevc"
-    transcoded_path = db.Column(db.String(1000), nullable=True) # Path to the optimized MP4
+    filename = db.Column(db.String(500), nullable=True)
+    file_size = db.Column(db.BigInteger, nullable=True)
+    file_format = db.Column(db.String(10), nullable=True)
+    has_nfo = db.Column(db.Boolean, default=False)
+    is_short = db.Column(db.Boolean, default=False)
+    dimensions = db.Column(db.String(100), nullable=True)
+    duration = db.Column(db.Integer, default=0)
+    video_codec = db.Column(db.String(50), nullable=True)
+    transcoded_path = db.Column(db.String(1000), nullable=True)
 
     def to_dict(self):
         """
@@ -192,7 +192,15 @@ def _scan_videos_task():
             # --- 1. Walk the directory ---
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
+                # Prune hidden directories
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+
+                # --- NEW: Check for 'vd21_hide' file ---
+                if 'vd21_hide' in filenames:
+                    print(f"  - Skipping hidden folder: {dirpath}")
+                    dirnames[:] = [] # Stop os.walk from descending
+                    continue # Skip to the next directory
+                # --- END NEW ---
 
                 for filename in filenames:
                     
@@ -233,11 +241,14 @@ def _scan_videos_task():
                             'ffprobe',
                             '-v', 'error',
                             '-select_streams', 'v:0',
-                            '-show_entries', 'stream=width,height,duration,codec_name:stream_tags=rotate:stream_side_data=rotation',
+                            '-show_entries', 'stream=width,height,duration,codec_name:stream_tags=rotate:stream_side_data=rotation,stream_disposition=rotate',
                             '-of', 'json',
                             video_file_path
                         ]
-                        result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True)
+                        # --- NEW: Add a 30-second timeout ---
+                        result = subprocess.run(ffprobe_cmd, capture_output=True, text=True, check=True, timeout=30)
+                        # --- END NEW ---
+                        
                         data = json.loads(result.stdout)
                         
                         if 'streams' in data and len(data['streams']) > 0:
@@ -273,6 +284,12 @@ def _scan_videos_task():
                         else:
                             print(f"  - ffprobe WARN: No streams found for {filename}.")
                             sys.stdout.flush()
+                    
+                    # --- NEW: Catch TimeoutExpired ---
+                    except subprocess.TimeoutExpired:
+                        print(f"  - Warning: ffprobe timed out for {filename}. Skipping file.")
+                        sys.stdout.flush()
+                    # --- END NEW ---
                     except subprocess.CalledProcessError as e:
                         stderr_output = e.stderr.decode('utf-8', errors='ignore') if e.stderr else "(No stderr)"
                         print(f"  - Warning: ffprobe failed for {filename}. STDERR: {stderr_output}")
@@ -472,7 +489,6 @@ def _scan_videos_task():
                     for path in paths_to_delete:
                         video_data = db_video_map[path]
                         
-                        # Delete associated transcode
                         try:
                             transcoded_path = get_transcoded_path_for_video(video_data.video_path)
                             if os.path.exists(transcoded_path):
@@ -481,7 +497,6 @@ def _scan_videos_task():
                         except Exception as e:
                             print(f"  - Error deleting transcoded file {transcoded_path}: {e}")
                         
-                        # Delete associated thumbnail
                         if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
                             try:
                                 os.remove(video_data.thumbnail_path)
@@ -489,7 +504,6 @@ def _scan_videos_task():
                             except OSError as e:
                                 print(f"  - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
                         
-                        # Delete video from DB
                         db.session.query(Video).filter(Video.id == video_data.id).delete()
                         print(f"  - Deleted video record: {video_data.video_path}")
                         deleted_count += 1
