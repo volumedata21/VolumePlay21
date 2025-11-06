@@ -88,6 +88,8 @@ function videoApp() {
                 videos = this.appData.videos.filter(v => v.watched_duration >= 4);
             } else if (viewType === 'shorts') {
                 videos = this.appData.videos.filter(v => v.is_short);
+            } else if (viewType === 'optimized') {
+                videos = this.appData.videos.filter(v => v.has_transcode);
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -465,6 +467,7 @@ function videoApp() {
             else if (type === 'watchLater') { this.currentTitle = 'Watch Later'; }
             else if (type === 'history') { this.currentTitle = 'History'; }
             else if (type === 'shorts') { this.currentTitle = 'Shorts'; }
+            else if (type === 'optimized') { this.currentTitle = 'Optimized'; }
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];

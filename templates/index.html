@@ -488,6 +488,17 @@
                                             Short
                                         </a>
                                     </template>
+                                    <template x-if="video.has_transcode">
+                                        <a href="#" 
+                                            @click.prevent.stop="currentView.type === 'optimized' ? setView('all') : setView('optimized')"
+                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                            style="color: #93c5fd; background-color: transparent; border: 1px solid #1e40af;"
+                                            onmouseover="this.style.borderColor='#dbeafe'"
+                                            onmouseout="this.style.borderColor='#1e40af'"
+                                            :title="currentView.type === 'optimized' ? 'Clear Optimized filter' : 'Filter by Optimized'">
+                                            Optimized
+                                        </a>
+                                    </template>
                                 </div>
 
                                 <span class="block truncate text-xs mt-1 ml-2"
