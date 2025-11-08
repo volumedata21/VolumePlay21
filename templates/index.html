@@ -23,7 +23,6 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
-
         /* Container for enforcing aspect ratio on thumbnails */
         .aspect-box {
             position: relative;
@@ -472,7 +471,6 @@
                             <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
                                 
                                 <div class="flex items-center">
-                                    
                                     <a href="#" @click.prevent="setView('author', null, video.author)"
                                         class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors truncate flex-shrink"
                                         x-text="video.author"></a>
@@ -622,7 +620,7 @@
                                                 x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
                                             <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
                                         </button>
-
+                                        
                                         <button @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Scroll to file details">
@@ -635,6 +633,28 @@
                                             <i class="material-icons" style="font-size: 20px;">speed</i>
                                             <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                         </button>
+
+                                        <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                            <button @click.prevent="createCustomThumb()"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                                <span>Create Thumb</span>
+                                            </button>
+                                        </template>
+                                        <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                            <button @click.prevent="deleteCustomThumb()"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                <span>Remove Thumb</span>
+                                            </button>
+                                        </template>
+                                        <template x-if="isCreatingThumb">
+                                            <button disabled
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                                <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                <span>Working...</span>
+                                            </button>
+                                        </template>
 
                                         <template x-if="!modalVideo.has_transcode && !isTranscoding">
                                             <button @click.prevent="startTranscode(modalVideo)"
@@ -657,13 +677,13 @@
                                                 <span>Remove Optimized</span>
                                             </button>
                                         </template>
+                                        
                                         <a :href="modalVideo.video_url" :download="modalVideo.filename"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Download original file">
                                             <i class="material-icons" style="font-size: 20px;">download</i>
                                             <span>Download</span>
                                         </a>
-
                                         <template x-if="modalVideo.has_transcode">
                                             <a :href="modalVideo.transcode_download_url"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -672,6 +692,7 @@
                                                 <span>Optimized</span>
                                             </a>
                                         </template>
+                                        
                                         <template x-if="modalVideo.youtube_id">
                                             <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
                                                 target="_blank"
@@ -791,6 +812,28 @@
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
 
+                                    <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                        <button @click.prevent="createCustomThumb()"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                            <span>Create Thumb</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                        <button @click.prevent="deleteCustomThumb()"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                            <span>Remove Thumb</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="isCreatingThumb">
+                                        <button disabled
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                            <span>Working...</span>
+                                        </button>
+                                    </template>
+                                    
                                     <template x-if="!modalVideo.has_transcode && !isTranscoding">
                                         <button @click.prevent="startTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -812,13 +855,14 @@
                                             <span>Remove Optimized</span>
                                         </button>
                                     </template>
+                                    
                                     <a :href="modalVideo.video_url" :download="modalVideo.filename"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         title="Download original file">
                                         <i class="material-icons" style="font-size: 20px;">download</i>
                                         <span>Download</span>
                                     </a>
-
+                                    
                                     <template x-if="modalVideo.has_transcode">
                                         <a :href="modalVideo.transcode_download_url"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -827,6 +871,7 @@
                                             <span>Optimized</span>
                                         </a>
                                     </template>
+                                    
                                     <template x-if="modalVideo.youtube_id">
                                         <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
                                             target="_blank"
