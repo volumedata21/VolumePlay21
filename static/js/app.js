@@ -17,10 +17,7 @@ function videoApp() {
         isTranscoding: false,
         transcodeStatus: { status: 'idle', message: '', video_id: null },
         transcodePollInterval: null,
-
-        // --- NEW ---
         isCreatingThumb: false,
-        // --- END NEW ---
 
         // Player state
         isAutoplayEnabled: true,
@@ -94,6 +91,12 @@ function videoApp() {
                 videos = this.appData.videos.filter(v => v.is_short);
             } else if (viewType === 'optimized') {
                 videos = this.appData.videos.filter(v => v.has_transcode);
+            // --- NEW: VR Filters ---
+            } else if (viewType === 'VR180') {
+                videos = this.appData.videos.filter(v => v.video_type === 'VR180');
+            } else if (viewType === 'VR360') {
+                videos = this.appData.videos.filter(v => v.video_type === 'VR360');
+            // --- END NEW ---
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -471,6 +474,10 @@ function videoApp() {
             else if (type === 'history') { this.currentTitle = 'History'; }
             else if (type === 'shorts') { this.currentTitle = 'Shorts'; }
             else if (type === 'optimized') { this.currentTitle = 'Optimized'; }
+            // --- NEW: VR Titles ---
+            else if (type === 'VR180') { this.currentTitle = 'VR 180 Videos'; }
+            else if (type === 'VR360') { this.currentTitle = 'VR 360 Videos'; }
+            // --- END NEW ---
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
@@ -539,6 +546,48 @@ function videoApp() {
                 }
             }
             this.closeModal();
+        },
+
+        playNextVideo() {
+            if (!this.modalVideo) return;
+            const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
+            
+            if (currentIndex !== -1 && currentIndex + 1 < this.filteredVideos.length) {
+                const nextVideo = this.filteredVideos[currentIndex + 1];
+                this.stopAndSaveVideo();
+                this.openModal(nextVideo);
+            } else {
+                console.log('Already at the last video.');
+            }
+        },
+
+        playPreviousVideo() {
+            if (!this.modalVideo) return;
+            const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
+            
+            if (currentIndex > 0) {
+                const prevVideo = this.filteredVideos[currentIndex - 1];
+                this.stopAndSaveVideo();
+                this.openModal(prevVideo);
+            } else {
+                console.log('Already at the first video.');
+            }
+        },
+
+        nextFrame() {
+            if (!this.$refs.videoPlayer) return;
+            const player = this.$refs.videoPlayer;
+            player.pause();
+            // We assume 30fps for a standard frame step
+            player.currentTime += (1 / 30);
+        },
+
+        previousFrame() {
+            if (!this.$refs.videoPlayer) return;
+            const player = this.$refs.videoPlayer;
+            player.pause();
+            // We assume 30fps for a standard frame step
+            player.currentTime -= (1 / 30);
         },
 
         // --- Playback Speed Controls ---
@@ -844,8 +893,8 @@ function videoApp() {
                 const response = await fetch(`/api/video/${video.id}/transcode/delete`, { method: 'POST' });
                 const updatedVideo = await response.json();
                 if (response.ok) {
-                    this.updateVideoData(updatedVideo); // Use new helper
-                    this.currentVideoSrc = updatedVideo.video_url; // Revert to original
+                    this.updateVideoData(updatedVideo);
+                    this.currentVideoSrc = updatedVideo.video_url;
                     this.refreshPlayerData();
                 } else {
                     console.error('Failed to delete transcode:', updatedVideo.error);
@@ -902,8 +951,6 @@ function videoApp() {
         },
 
         async refreshModalVideoData() {
-            // This is a full refresh, which is slower but guarantees all
-            // data (including main grid) is in sync.
             await this.fetchData(); 
             const newVideoData = this.appData.videos.find(v => v.id === this.modalVideo.id);
             if (newVideoData) {
@@ -915,7 +962,6 @@ function videoApp() {
         },
 
         refreshPlayerData() {
-            // Forces the <video> tag to re-load its source
             this.$nextTick(() => {
                 if (this.$refs.videoPlayer) {
                     this.$refs.videoPlayer.load();
@@ -923,8 +969,17 @@ function videoApp() {
                 }
             });
         },
+        
+        updateVideoData(updatedVideo) {
+            // Helper to update the video in the modal and main list
+            const index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
+            if (index !== -1) {
+                this.appData.videos[index] = updatedVideo;
+            }
+            this.modalVideo = updatedVideo;
+        },
 
-        // --- NEW: Custom Thumbnail Functions ---
+        // --- Custom Thumbnail Functions ---
         async createCustomThumb() {
             if (this.isCreatingThumb || !this.$refs.videoPlayer) return;
             
@@ -974,21 +1029,6 @@ function videoApp() {
             } finally {
                 this.isCreatingThumb = false;
             }
-        },
-        
-        updateVideoData(updatedVideo) {
-            // This helper updates the video in both the modal and the main video list
-            // to keep everything in sync without a full page reload or player reset.
-            
-            // 1. Update the main list
-            const index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
-            if (index !== -1) {
-                // We must create a new object reference for Alpine's reactivity to see the change
-                this.appData.videos[index] = updatedVideo;
-            }
-            
-            // 2. Update the modal
-            this.modalVideo = updatedVideo;
         }
     };
 }

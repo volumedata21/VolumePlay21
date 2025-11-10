@@ -497,6 +497,29 @@
                                             Optimized
                                         </a>
                                     </template>
+                                    
+                                    <template x-if="video.video_type === 'VR180'">
+                                        <a href="#" 
+                                            @click.prevent.stop="currentView.type === 'VR180' ? setView('all') : setView('VR180')"
+                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                            style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
+                                            onmouseover="this.style.borderColor='#f5d0fe'"
+                                            onmouseout="this.style.borderColor='#701a75'"
+                                            :title="currentView.type === 'VR180' ? 'Clear VR180 filter' : 'Filter by VR180'">
+                                            VR180
+                                        </a>
+                                    </template>
+                                    <template x-if="video.video_type === 'VR360'">
+                                        <a href="#" 
+                                            @click.prevent.stop="currentView.type === 'VR360' ? setView('all') : setView('VR360')"
+                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                            style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
+                                            onmouseover="this.style.borderColor='#f5d0fe'"
+                                            onmouseout="this.style.borderColor='#701a75'"
+                                            :title="currentView.type === 'VR360' ? 'Clear VR360 filter' : 'Filter by VR360'">
+                                            VR360
+                                        </a>
+                                    </template>
                                 </div>
 
                                 <span class="block truncate text-xs mt-1 ml-2"
@@ -605,6 +628,34 @@
                                 </div>
 
                                 <div class="lg:hidden mt-4">
+                                    
+                                    <div class="grid grid-cols-6 gap-2 mb-2">
+                                        <button @click.prevent="playPreviousVideo()" title="Previous Video"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">skip_previous</i>
+                                        </button>
+                                        <button @click.prevent="previousFrame()" title="Previous Frame"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">chevron_left</i>
+                                        </button>
+                                        <button @click.prevent="$refs.videoPlayer.currentTime -= 5" title="Seek Back 5s"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">fast_rewind</i>
+                                        </button>
+                                        <button @click.prevent="$refs.videoPlayer.currentTime += 10" title="Seek Forward 10s"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">fast_forward</i>
+                                        </button>
+                                        <button @click.prevent="nextFrame()" title="Next Frame"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">chevron_right</i>
+                                        </button>
+                                        <button @click.prevent="playNextVideo()" title="Next Video"
+                                            class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">skip_next</i>
+                                        </button>
+                                    </div>
+
                                     <div class="grid grid-cols-2 gap-2">
                                         <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -783,6 +834,34 @@
                             </div>
 
                             <div class="hidden lg:block lg:w-1/3 lg:mt-0">
+
+                                <div class="grid grid-cols-6 gap-2 mb-2">
+                                    <button @click.prevent="playPreviousVideo()" title="Previous Video"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">skip_previous</i>
+                                    </button>
+                                    <button @click.prevent="previousFrame()" title="Previous Frame"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">chevron_left</i>
+                                    </button>
+                                    <button @click.prevent="$refs.videoPlayer.currentTime -= 5" title="Seek Back 5s"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">fast_rewind</i>
+                                    </button>
+                                    <button @click.prevent="$refs.videoPlayer.currentTime += 10" title="Seek Forward 10s"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">fast_forward</i>
+                                    </button>
+                                    <button @click.prevent="nextFrame()" title="Next Frame"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">chevron_right</i>
+                                    </button>
+                                    <button @click.prevent="playNextVideo()" title="Next Video"
+                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">skip_next</i>
+                                    </button>
+                                </div>
+                                
                                 <div class="grid grid-cols-2 gap-2">
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
