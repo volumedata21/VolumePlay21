@@ -96,6 +96,41 @@
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
+                <div class="pt-2" x-cloak>
+                    <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
+                    <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
+
+                        <button x-show="filterHistory.length > 0" @click.prevent="goBackOneFilter()"
+                            class="inline-flex items-center justify-center h-7 w-7 rounded-full text-[var(--text-main)] hover:text-[var(--text-bright)] hover:bg-[var(--bg-highlight)]/50 transition-colors"
+                            title="Go back one step (Filter History)">
+                            <span class="material-icons" style="font-size: 20px;">arrow_back</span>
+                        </button>
+
+                        <a href="#" @click.prevent="filterByFolderTag('clear_all')"
+                            x-show="currentView.type === 'folder' && currentView.id"
+                            class="inline-block text-sm font-medium text-[var(--text-main)] hover:text-white px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
+                            style="background-color: #6B7280;" title="Clear Folder Filter">
+                            Clear All
+                        </a>
+
+                        <template x-for="tag in getDynamicTags" :key="tag">
+                            <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
+                                draggable="true"
+                                class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
+                                x-text="tag" :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
+                            </a>
+                        </template>
+                        <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
+                            <p class="text-xs italic text-[var(--text-secondary)]">Tags only available for All
+                                Videos/Folders.</p>
+                        </template>
+                        <template
+                            x-if="getDynamicTags.length === 0 && (currentView.type === 'all' || currentView.type === 'folder')">
+                            <p class="text-xs italic text-[var(--text-secondary)]">No deeper tags available.</p>
+                        </template>
+                    </div>
+                </div>
+
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
                     <div class="flex items-center justify-between px-3 mb-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>

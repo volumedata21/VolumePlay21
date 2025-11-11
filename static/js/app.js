@@ -8,6 +8,7 @@ function videoApp() {
         isModalOpen: false,
         isScanning: false, // Flag for scan polling
         isGeneratingThumbnails: false, // Flag for thumbnail polling
+        isLoading: false, // For loading video pages
 
         // Status objects for background tasks
         thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
@@ -32,20 +33,25 @@ function videoApp() {
         searchQuery: '',
         sortOrder: 'aired_newest',
         appData: {
-            videos: [],
+            videos: [], // This will be filled by pagination
+            allVideos: [], // This is a new cache for smart playlists
             folder_tree: {},
             smartPlaylists: []
         },
-        videosToShow: 75,
         filterHistory: [], // Filter history for back button
 
-        // --- NEW: Global Filter Settings ---
+        // --- NEW: Pagination State ---
+        currentPage: 1,
+        totalPages: 1,
+        totalItems: 0,
+        // --- END NEW ---
+
+        // --- Global Filter Settings ---
         filterSettings: {
             shorts: 'normal', // 'normal', 'solo', 'hide'
             vr: 'normal',     // 'normal', 'solo', 'hide'
             optimized: 'normal' // 'normal', 'solo', 'hide'
         },
-        // --- END NEW ---
 
         // --- Init ---
         init() {
@@ -53,83 +59,147 @@ function videoApp() {
             Alpine.store('globalState').currentView = this.currentView;
             Alpine.store('globalState').openFolderPaths = [];
 
-            // --- NEW: Load filter settings from localStorage ---
+            // Load filter settings from localStorage
             const savedFilters = localStorage.getItem('filterSettings');
             if (savedFilters) {
-                // Merge saved settings with defaults to ensure new properties are not lost
                 this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
             }
-            // Watch for changes and save them
-            this.$watch('filterSettings', (value) => {
-                localStorage.setItem('filterSettings', JSON.stringify(value));
-            }, { deep: true });
+
+            // --- NEW: Watch all filters and trigger a new search ---
+            this.$watch('searchQuery', () => this.fetchVideos(true));
+            this.$watch('sortOrder', () => this.fetchVideos(true));
+            this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
+            this.$watch('filterSettings', () => this.fetchVideos(true), { deep: true });
             // --- END NEW ---
 
-            this.fetchData();
+            this.fetchMetadata(); // Load folders/playlists once
+            this.fetchVideos(true); // Load first page of videos
             this.startScanPolling(); // Check if a scan is running on load
-            window.addEventListener('focus', () => this.fetchData());
+
+            // --- NEW: Refresh data on tab focus and on a timer ---
+            window.addEventListener('focus', () => {
+                if (!this.isScanning) {
+                    this.fetchVideos(true); // 'true' = new query
+                }
+            });
+
+            // Refresh every hour
+            setInterval(() => {
+                if (!this.isModalOpen && !this.isScanning) {
+                    this.fetchVideos(true);
+                }
+            }, 3600000);
+            // --- END NEW ---
         },
 
-        async fetchData() {
+        // --- NEW: Fetch Metadata (Folders & Playlists) ---
+        async fetchMetadata() {
             try {
-                const response = await fetch('/api/data');
+                const response = await fetch('/api/metadata');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
 
-                this.appData.videos = data.articles || [];
                 this.appData.folder_tree = data.folder_tree || {};
-                this.appData.smartPlaylists = data.smartPlayLists || [];
+                this.appData.smartPlaylists = data.smartPlaylists || [];
 
-                if (this.currentView.type === 'folder' && Object.keys(this.appData.folder_tree).length === 0) {
-                    this.setView('all');
-                }
-
-                if (!this.currentTitle || this.currentTitle === 'All Videos') {
-                    this.setView('all');
-                }
             } catch (e) {
-                console.error('Error fetching data:', e);
-                this.appData = { videos: [], folder_tree: {}, smartPlaylists: [] };
+                console.error('Error fetching metadata:', e);
+                this.appData.folder_tree = {};
+                this.appData.smartPlaylists = [];
+            }
+        },
+
+        // --- NEW: Main Paginated Video Fetcher ---
+        async fetchVideos(isNewQuery = false) {
+            if (this.isLoading) return; // Prevent multiple requests
+
+            // 1. Reset state if it's a new filter/sort/view
+            if (isNewQuery) {
+                this.currentPage = 1;
+                this.totalPages = 1;
+                this.appData.videos = [];
+            }
+
+            // 2. Stop if we're already at the end of the list
+            if (this.currentPage > this.totalPages) {
+                return;
+            }
+
+            this.isLoading = true;
+
+            // --- 3. EXCEPTION: Smart Playlists ---
+            // Smart playlist logic is too complex to move to the server query.
+            // For this view *only*, we load ALL videos and filter on the client.
+            if (this.currentView.type === 'smart_playlist') {
+                try {
+                    // Only fetch all videos if we don't have them cached
+                    if (this.appData.allVideos.length === 0) {
+                        const response = await fetch('/api/videos_all');
+                        if (!response.ok) throw new Error('Failed to load all videos');
+                        const data = await response.json();
+                        this.appData.allVideos = data.articles || [];
+                    }
+                    // Client-side filtering for smart playlists will be handled
+                    // by the 'filteredVideos' getter. We don't populate appData.videos.
+                    this.appData.videos = []; // Clear main list
+                    this.totalItems = 0; // Handled by getter
+                    this.totalPages = 1; // Not paginated
+                } catch (e) {
+                    console.error('Error fetching all videos for playlist:', e);
+                } finally {
+                    this.isLoading = false;
+                }
+                return; // Stop here
+            }
+            // --- END EXCEPTION ---
+
+
+            // --- 4. Build URL for all other paginated views ---
+            const params = new URLSearchParams({
+                page: this.currentPage,
+                searchQuery: this.searchQuery || '',
+                sortOrder: this.sortOrder,
+                viewType: this.currentView.type || 'all',
+                viewId: this.currentView.id || '',
+                viewAuthor: this.currentView.author || '',
+                filterShorts: this.filterSettings.shorts,
+                filterVR: this.filterSettings.vr,
+                filterOptimized: this.filterSettings.optimized,
+            });
+
+            // --- 5. Fetch Data ---
+            try {
+                const response = await fetch(`/api/videos?${params.toString()}`);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const data = await response.json();
+
+                // Append new videos to the list
+                this.appData.videos.push(...data.articles);
+                this.totalItems = data.total_items;
+                this.totalPages = data.total_pages;
+                this.currentPage++; // Increment for the *next* load
+            } catch (e) {
+                console.error('Error fetching videos:', e);
+                this.appData.videos = [];
+                this.totalItems = 0;
+            } finally {
+                this.isLoading = false;
             }
         },
 
         // --- Computed Properties (Getters) ---
-        get fullFilteredList() {
-            let videos = [];
-            const viewState = Alpine.store('globalState').currentView;
-            const viewType = viewState.type;
-            const viewAuthor = viewState.author;
 
-            if (viewType === 'all') {
-                videos = this.appData.videos;
-            } else if (viewType === 'favorites') {
-                videos = this.appData.videos.filter(v => v.is_favorite);
-            } else if (viewType === 'watchLater') {
-                videos = this.appData.videos.filter(v => v.is_read_later);
-            } else if (viewType === 'history') {
-                videos = this.appData.videos.filter(v => v.watched_duration >= 4);
-            } else if (viewType === 'shorts') {
-                videos = this.appData.videos.filter(v => v.is_short);
-            } else if (viewType === 'optimized') {
-                videos = this.appData.videos.filter(v => v.has_transcode);
-            } else if (viewType === 'VR180') {
-                videos = this.appData.videos.filter(v => v.video_type === 'VR180_SBS' || v.video_type === 'VR180_TB');
-            } else if (viewType === 'VR360') {
-                videos = this.appData.videos.filter(v => v.video_type === 'VR360');
-            } else if (viewType === 'author') {
-                videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
-            } else if (viewType === 'folder') {
-                const path = viewState.id;
-                videos = this.appData.videos.filter(v =>
-                    v.relative_path === path ||
-                    (v.relative_path && v.relative_path.startsWith(path + '/'))
-                );
-            }
-            else if (viewType === 'smart_playlist') {
-                const playlistId = viewState.id;
+        // OLD fullFilteredList is REMOVED.
+        
+        // This getter now handles the 'smart_playlist' exception.
+        get filteredVideos() {
+            // --- Smart Playlist Logic (Client-Side) ---
+            if (this.currentView.type === 'smart_playlist') {
+                const playlistId = this.currentView.id;
                 const playlist = this.appData.smartPlaylists.find(p => p.id === playlistId);
+                let videos = this.appData.allVideos; // Filter from the full cache
+
                 if (playlist) {
-                    videos = this.appData.videos;
                     playlist.filters.forEach(filter => {
                         if (filter.type === 'title') {
                             const filterValue = String(filter.value || '');
@@ -151,118 +221,80 @@ function videoApp() {
                         }
                     });
                 }
-            }
-
-            // --- NEW: Global Filter Logic (Solo & Hide) ---
-            const isShortsView = viewType === 'shorts';
-            const isVRView = viewType === 'VR180' || viewType === 'VR360';
-            const isOptimizedView = viewType === 'optimized';
-
-            const isShortsSolo = this.filterSettings.shorts === 'solo' && !isShortsView;
-            const isVRSolo = this.filterSettings.vr === 'solo' && !isVRView;
-            const isOptimizedSolo = this.filterSettings.optimized === 'solo' && !isOptimizedView;
-            const isSoloActive = isShortsSolo || isVRSolo || isOptimizedSolo;
-
-            if (isSoloActive) {
-                let soloVideos = [];
-                if (isShortsSolo) {
-                    soloVideos = soloVideos.concat(videos.filter(v => v.is_short));
+                // We still apply search and sort to the smart playlist
+                if (this.searchQuery.trim() !== '') {
+                    const query = this.searchQuery.toLowerCase();
+                    videos = videos.filter(v =>
+                        (v.title && v.title.toLowerCase().includes(query)) ||
+                        (v.summary && v.summary.toLowerCase().includes(query)) ||
+                        (v.author && v.author.toLowerCase().includes(query))
+                    );
                 }
-                if (isVRSolo) {
-                    soloVideos = soloVideos.concat(videos.filter(v => v.video_type));
-                }
-                if (isOptimizedSolo) {
-                    soloVideos = soloVideos.concat(videos.filter(v => v.has_transcode));
-                }
-                videos = [...new Set(soloVideos)]; // De-duplicate
+                videos.sort((a, b) => this.sortLogic(a, b));
+                return videos; // Return the client-filtered list
             }
 
-            // Apply 'hide' filters last
-            if (this.filterSettings.shorts === 'hide' && !isShortsView) {
-                videos = videos.filter(v => !v.is_short);
-            }
-            if (this.filterSettings.vr === 'hide' && !isVRView) {
-                videos = videos.filter(v => !v.video_type);
-            }
-            if (this.filterSettings.optimized === 'hide' && !isOptimizedView) {
-                videos = videos.filter(v => !v.has_transcode);
-            }
-
-            // Apply 'hide' filters last
-            if (this.filterSettings.shorts === 'hide' && !isShortsView) {
-                videos = videos.filter(v => !v.is_short);
-            }
-            if (this.filterSettings.vr === 'hide' && !isVRView) {
-                videos = videos.filter(v => !v.video_type);
-            }
-            // --- END NEW ---
-
-            if (this.searchQuery.trim() !== '') {
-                const query = this.searchQuery.toLowerCase();
-                videos = videos.filter(v =>
-                    (v.title && v.title.toLowerCase().includes(query)) ||
-                    (v.summary && v.summary.toLowerCase().includes(query)) ||
-                    (v.author && v.author.toLowerCase().includes(query))
-                );
-            }
-
-            videos.sort((a, b) => {
-                if (viewType === 'history') {
-                    const dateA = a.last_watched ? new Date(a.last_watched) : 0;
-                    const dateB = b.last_watched ? new Date(b.last_watched) : 0;
-                    return dateB - dateA;
-                }
-                let dateA, dateB;
-                const MAX_DATE = new Date(8640000000000000);
-                const MIN_DATE = new Date(0);
-                switch (this.sortOrder) {
-                    case 'aired_oldest':
-                        dateA = a.aired_date ? new Date(a.aired_date) : MAX_DATE;
-                        dateB = b.aired_date ? new Date(b.aired_date) : MAX_DATE;
-                        return dateA - dateB;
-                    case 'uploaded_newest':
-                        dateA = a.uploaded ? new Date(a.uploaded) : MIN_DATE;
-                        dateB = b.uploaded ? new Date(b.uploaded) : MIN_DATE;
-                        return dateB - dateA;
-                    case 'uploaded_oldest':
-                        dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
-                        dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
-                        return dateA - dateB;
-                    case 'aired_newest':
-                    default:
-                        dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
-                        dateB = b.aired_date ? new Date(b.aired_date) : MIN_DATE;
-                        return dateB - dateA;
-                }
-            });
-
-            return videos;
+            // --- All Other Views (Server-Paginated) ---
+            // The server already filtered and sorted. Just return the list.
+            return this.appData.videos;
         },
 
-        get filteredVideos() {
-            return this.fullFilteredList.slice(0, this.videosToShow);
+        // Helper for sorting smart playlists
+        sortLogic(a, b) {
+            if (this.currentView.type === 'history') {
+                const dateA = a.last_watched ? new Date(a.last_watched) : 0;
+                const dateB = b.last_watched ? new Date(b.last_watched) : 0;
+                return dateB - dateA;
+            }
+            let dateA, dateB;
+            const MAX_DATE = new Date(8640000000000000);
+            const MIN_DATE = new Date(0);
+            switch (this.sortOrder) {
+                case 'aired_oldest':
+                    dateA = a.aired_date ? new Date(a.aired_date) : MAX_DATE;
+                    dateB = b.aired_date ? new Date(b.aired_date) : MAX_DATE;
+                    return dateA - dateB;
+                case 'uploaded_newest':
+                    dateA = a.uploaded ? new Date(a.uploaded) : MIN_DATE;
+                    dateB = b.uploaded ? new Date(b.uploaded) : MIN_DATE;
+                    return dateB - dateA;
+                case 'uploaded_oldest':
+                    dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
+                    dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
+                    return dateA - dateB;
+                case 'aired_newest':
+                default:
+                    dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
+                    dateB = b.aired_date ? new Date(b.aired_date) : MIN_DATE;
+                    return dateB - dateA;
+            }
         },
 
         getEmptyMessage() {
+            if (this.isLoading && this.appData.videos.length === 0) {
+                return 'Loading videos...';
+            }
             if (this.isScanning) {
                 if (this.scanStatus.progress > 0) {
                     return `Scanning library... (${this.scanStatus.progress} videos processed)`;
                 }
                 return 'Scanning library... (Starting)';
             }
-
-            if (this.searchQuery.trim() !== '') return 'No videos match your search.';
-            if (!this.appData.videos || this.appData.videos.length === 0) {
-                return 'No videos found. Click the refresh icon to scan your library.';
+            
+            if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist') {
+                if (this.searchQuery.trim() !== '') return 'No videos match your search.';
+                if (!this.appData.videos || this.totalItems === 0) {
+                    return 'No videos found. Click the refresh icon to scan your library.';
+                }
+                return 'No videos found for this filter.';
             }
-            const viewType = Alpine.store('globalState').currentView.type;
-            const viewAuthor = Alpine.store('globalState').currentView.author;
 
-            if (viewType === 'author') return `No videos found for: ${viewAuthor || 'Unknown'}.`;
-            if (viewType === 'folder') return 'No videos found in this folder.';
-            if (viewType === 'history') return 'No videos in your history yet.';
-            if (viewType === 'smart_playlist') return 'No videos match this playlist\'s filters.';
-            if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
+            // Smart playlist empty message
+            if (this.appData.videos.length === 0 && this.currentView.type === 'smart_playlist') {
+                if (this.isLoading) return 'Loading videos for playlist...';
+                return 'No videos match this playlist\'s filters.';
+            }
+
             return 'No videos found.';
         },
 
@@ -297,69 +329,36 @@ function videoApp() {
         },
 
         get getDynamicTags() {
-            const viewType = Alpine.store('globalState').currentView.type;
-            if (viewType !== 'all' && viewType !== 'folder') return [];
+            // 1. Disable if not in a browsable view or if searching
+            if (this.currentView.type !== 'all' && this.currentView.type !== 'folder') return [];
             if (this.searchQuery.trim() !== '') return [];
 
-            const videos = this.fullFilteredList;
-            if (videos.length === 0) return [];
+            let currentLevel = this.appData.folder_tree;
+            if (!currentLevel || Object.keys(currentLevel).length === 0) {
+                return []; // Folder tree hasn't loaded or is empty
+            }
 
-            const currentPath = viewType === 'folder' ? this.currentFilterPath : '';
-            const pathPrefix = currentPath ? currentPath + '/' : '';
-            const segments = new Map();
-
-            videos.forEach(v => {
-                const path = v.relative_path || '';
-                if (path.startsWith(pathPrefix)) {
-                    let remainingPath = path.substring(pathPrefix.length);
-                    const nextSegment = remainingPath.split('/')[0];
-                    if (nextSegment && nextSegment !== currentPath) {
-                        segments.set(nextSegment, (segments.get(nextSegment) || 0) + 1);
+            // 2. Handle 'folder' view (we need to traverse the tree)
+            if (this.currentView.type === 'folder' && this.currentView.id) {
+                const pathParts = this.currentView.id.split('/');
+                for (const part of pathParts) {
+                    if (currentLevel && typeof currentLevel === 'object' && currentLevel[part]) {
+                        currentLevel = currentLevel[part];
+                    } else {
+                        currentLevel = null; // Path doesn't exist or is a leaf
+                        break;
                     }
-                }
-            });
-
-            const validTags = new Set();
-            const potentialTags = Array.from(segments.keys());
-
-            potentialTags.forEach(tag => {
-                const nextPath = pathPrefix + tag;
-                const videosUnderNextPath = this.appData.videos.filter(v =>
-                    (v.relative_path || '').startsWith(nextPath)
-                );
-
-                if (videosUnderNextPath.length <= 1) {
-                    validTags.add(tag);
-                    return;
-                }
-
-                let uniqueImmediateSubFolders = new Set();
-                videosUnderNextPath.forEach(v => {
-                    let pathRemainder = v.relative_path.substring(nextPath.length);
-                    if (pathRemainder.startsWith('/')) {
-                        pathRemainder = pathRemainder.substring(1);
-                    }
-                    const nextSubFolder = pathRemainder.split('/')[0];
-                    if (nextSubFolder) {
-                        uniqueImmediateSubFolders.add(nextSubFolder);
-                    }
-                });
-
-                if (videosUnderNextPath.length > 1 && uniqueImmediateSubFolders.size === videosUnderNextPath.length) {
-                    return;
-                }
-                validTags.add(tag);
-            });
-
-            if (validTags.size === 1) {
-                const singleTag = Array.from(validTags)[0];
-                const nextPath = pathPrefix + singleTag;
-                const videosUnderNextPath = this.appData.videos.filter(v => (v.relative_path || '').startsWith(nextPath));
-                if (videosUnderNextPath.length <= 1) {
-                    return [];
                 }
             }
-            return Array.from(validTags).sort();
+
+            // 3. Return the keys of the current level
+            //    (This works for 'all' view [currentLevel = root] and 'folder' view)
+            if (currentLevel && typeof currentLevel === 'object') {
+                return Object.keys(currentLevel).sort();
+            }
+
+            // 4. No sub-tags found
+            return [];
         },
 
         filterByFolderTag(tag) {
@@ -503,7 +502,7 @@ function videoApp() {
             };
             this.currentView = Alpine.store('globalState').currentView;
             this.currentTitle = lastView.title;
-            this.videosToShow = 75;
+            // fetchVideos() will be triggered by the $watch('currentView')
         },
 
         setView(type, id = null, author = null) {
@@ -523,7 +522,7 @@ function videoApp() {
             this.currentView = Alpine.store('globalState').currentView;
             this.updateTitle();
             this.isMobileMenuOpen = false;
-            this.videosToShow = 75;
+            // fetchVideos() will be triggered by the $watch('currentView')
         },
 
         updateTitle() {
@@ -548,8 +547,12 @@ function videoApp() {
             else { this.currentTitle = 'All Videos'; }
         },
 
+        // --- UPDATED: loadMoreVideos ---
         loadMoreVideos() {
-            this.videosToShow += 75;
+            // Only load more if it's not a smart playlist
+            if (this.currentView.type !== 'smart_playlist') {
+                this.fetchVideos(false); // 'false' = append page
+            }
         },
 
         openModal(video) {
@@ -664,11 +667,8 @@ function videoApp() {
             }
             this.setPlaybackSpeed(this.playbackRates[nextIndex]);
         },
-        // Add these new functions inside your videoApp object in app.js
 
-        /**
-         * Gets the text for the new unified tag button.
-         */
+        // --- Tag Button Functions ---
         getVideoTagText(video) {
             if (video.is_short) {
                 return 'Tag: Short';
@@ -682,9 +682,6 @@ function videoApp() {
             return 'Set Tag';
         },
 
-        /**
-         * Gets the icon for the new unified tag button.
-         */
         getVideoTagIcon(video) {
             if (video.is_short) {
                 return 'phone_android'; // Icon for Shorts
@@ -698,10 +695,6 @@ function videoApp() {
             return 'label_off'; // Icon for 'None'
         },
 
-        /**
-         * Cycles through the available tags: None -> Short -> VR180 -> VR360 -> None
-         * and sends the update to the new backend endpoint.
-         */
         cycleVideoTag(video) {
             let currentTag = 'none';
             if (video.is_short) {
@@ -712,7 +705,6 @@ function videoApp() {
                 currentTag = 'vr360';
             }
 
-            // Define the cycle
             const cycle = {
                 'none': 'short',
                 'short': 'vr180',
@@ -721,38 +713,32 @@ function videoApp() {
             };
             const nextTag = cycle[currentTag] || 'none';
 
-            // Send the API request to our new endpoint
             fetch(`/api/video/${video.id}/set_tag`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tag: nextTag })
             })
-                .then(res => {
-                    if (!res.ok) throw new Error('Failed to update tag');
-                    return res.json();
-                })
-                .then(updatedVideo => {
-                    // 1. Update the video in the modal
-                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
-
-                    // 2. Update the video in the main list so the grid view updates
-                    const index = this.appData.allVideos.findIndex(v => v.id === video.id);
-                    if (index !== -1) {
-                        // This ensures the main array has the new data
-                        this.appData.allVideos[index] = { ...this.appData.allVideos[index], ...updatedVideo };
-                    }
-                })
-                .catch(err => {
-                    console.error('Failed to update video tag:', err);
-                    // Optionally show an error to the user
-                });
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to update tag');
+                return res.json();
+            })
+            .then(updatedVideo => {
+                // Update the video in the modal
+                this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+                // Update the video in the main list
+                this.updateVideoData(updatedVideo);
+            })
+            .catch(err => {
+                console.error('Failed to update video tag:', err);
+            });
         },
+
         // --- Content Rendering ---
         getAuthorVideoCount(author) {
-            if (!author || !this.appData.videos) return 0;
-            return this.appData.videos.filter(v => v.author === author).length;
+            // This is no longer accurate as we don't have all videos.
+            // A proper fix would be a server endpoint.
+            // For now, let's just return a placeholder.
+            return '...';
         },
 
         unescapeHTML(text) {
@@ -926,29 +912,27 @@ function videoApp() {
                     const data = await response.json();
                     this.scanStatus = data;
 
-                    if (data.status === 'scanning') {
-                        this.fetchData(); // Fetch progressive updates
-                    }
                     if (data.status === 'idle' || data.status === 'error') {
-                        this.stopScanPolling();
+                        this.stopScanPolling(data.status === 'idle');
                     }
                 } catch (e) {
                     console.error(e);
                     this.scanStatus = { status: 'error', message: e.message };
-                    this.stopScanPolling();
+                    this.stopScanPolling(false);
                 }
             }, 3000);
         },
 
-        stopScanPolling() {
+        stopScanPolling(wasSuccessful) {
             if (this.scanPollInterval) {
                 clearInterval(this.scanPollInterval);
                 this.scanPollInterval = null;
             }
             this.isScanning = false;
-            if (this.scanStatus.status === 'idle') {
+            if (wasSuccessful) {
                 console.log('Video scan complete, fetching new data.');
-                this.fetchData();
+                this.fetchMetadata(); // Re-fetch folders
+                this.fetchVideos(true); // Re-fetch videos
             }
         },
 
@@ -963,29 +947,26 @@ function videoApp() {
                     if (!response.ok) throw new Error('Status poll failed');
                     const data = await response.json();
                     this.thumbnailStatus = data;
-                    if (data.status === 'generating') {
-                        this.fetchData(); // Fetch progressive updates
-                    }
                     if (data.status === 'idle' || data.status === 'error') {
-                        this.stopThumbnailPolling();
+                        this.stopThumbnailPolling(data.status === 'idle');
                     }
                 } catch (e) {
                     console.error(e);
                     this.thumbnailStatus.status = 'error';
-                    this.stopThumbnailPolling();
+                    this.stopThumbnailPolling(false);
                 }
             }, 2000);
         },
 
-        stopThumbnailPolling() {
+        stopThumbnailPolling(wasSuccessful) {
             if (this.thumbnailPollInterval) {
                 clearInterval(this.thumbnailPollInterval);
                 this.thumbnailPollInterval = null;
             }
             this.isGeneratingThumbnails = false;
-            if (this.thumbnailStatus.status === 'idle') {
+            if (wasSuccessful) {
                 console.log('Thumbnail generation complete, fetching new data.');
-                this.fetchData();
+                this.fetchVideos(true);
             }
         },
 
@@ -1086,18 +1067,30 @@ function videoApp() {
             this.isTranscoding = false;
             this.transcodeStatus = { status: 'idle', message: '', video_id: null };
             if (wasSuccessful) {
-                this.refreshModalVideoData();
+                this.refreshModalVideoData(this.modalVideo.id);
             }
         },
 
-        async refreshModalVideoData() {
-            await this.fetchData();
-            const newVideoData = this.appData.videos.find(v => v.id === this.modalVideo.id);
-            if (newVideoData) {
-                this.modalVideo = newVideoData;
-                this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
-                this.refreshPlayerData();
-                console.log('Player source updated.');
+        async refreshModalVideoData(videoId) {
+            // Re-fetch just this one video's data from the server
+            // This is more efficient than fetching all videos again
+            try {
+                // We re-use the /api/videos endpoint to get one video
+                const params = new URLSearchParams({ page: 1, viewType: 'all' });
+                const response = await fetch(`/api/videos?${params.toString()}`);
+                const data = await response.json();
+                
+                const newVideoData = data.articles.find(v => v.id === videoId);
+                
+                if (newVideoData) {
+                    this.updateVideoData(newVideoData); // Update it in the list
+                    this.modalVideo = newVideoData; // Update it in the modal
+                    this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
+                    this.refreshPlayerData();
+                    console.log('Player source updated.');
+                }
+            } catch(e) {
+                console.error("Failed to refresh single video data", e);
             }
         },
 
@@ -1111,12 +1104,20 @@ function videoApp() {
         },
 
         updateVideoData(updatedVideo) {
-            // Helper to update the video in the modal and main list
-            const index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
+            // Helper to update the video in the main list
+            let index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
             if (index !== -1) {
                 this.appData.videos[index] = updatedVideo;
             }
-            this.modalVideo = updatedVideo;
+            // Also update the smart playlist cache
+            index = this.appData.allVideos.findIndex(v => v.id === updatedVideo.id);
+            if (index !== -1) {
+                this.appData.allVideos[index] = updatedVideo;
+            }
+            // Update modal video if it's the one being changed
+            if (this.modalVideo && this.modalVideo.id === updatedVideo.id) {
+                this.modalVideo = updatedVideo;
+            }
         },
 
         // --- Custom Thumbnail Functions ---
@@ -1170,8 +1171,6 @@ function videoApp() {
                 this.isCreatingThumb = false;
             }
         },
-
-
 
         // --- Global Filter Button Helpers ---
         cycleShortsFilter() {
@@ -1237,7 +1236,8 @@ function filterEditor(playlistId, appData) {
         },
 
         get allAuthors() {
-            const videos = appData.videos || [];
+            // This now filters from the 'allVideos' cache
+            const videos = appData.allVideos || [];
             const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
             return Array.from(authors).sort();
         },

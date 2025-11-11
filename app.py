@@ -8,7 +8,7 @@ import subprocess # For running ffmpeg
 import sys # To flush print statements
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy.sql import func
+from sqlalchemy.sql import func, or_, and_
 import mimetypes
 import hashlib
 
@@ -66,6 +66,11 @@ class Video(db.Model):
     show_title = db.Column(db.String(200))
     summary = db.Column(db.Text)
     video_path = db.Column(db.String(1000), unique=True, nullable=False)
+    
+    # --- NEW COLUMN FOR PERFORMANCE ---
+    relative_path = db.Column(db.String(1000), index=True, nullable=True) 
+    # --- END NEW COLUMN ---
+
     thumbnail_path = db.Column(db.String(1000))
     show_poster_path = db.Column(db.String(1000), nullable=True)
     custom_thumbnail_path = db.Column(db.String(1000), nullable=True)
@@ -96,22 +101,6 @@ class Video(db.Model):
         """
         Serializes the Video object to a dictionary for the frontend API.
         """
-        relative_dir = '.'
-        try:
-            if not isinstance(self.video_path, str):
-                self.video_path = str(self.video_path)
-            
-            norm_video_path = os.path.normpath(self.video_path)
-            norm_base_dir = os.path.normpath(video_dir)
-            
-            relative_dir = os.path.relpath(os.path.dirname(norm_video_path), norm_base_dir)
-            relative_dir = relative_dir.replace(os.sep, '/')
-        except ValueError:
-            relative_dir = '.' 
-        except TypeError:
-            print(f"Error processing path for video ID {self.id}: {self.video_path}")
-            relative_dir = '.'
-        
         has_custom_thumb = bool(self.custom_thumbnail_path and os.path.exists(self.custom_thumbnail_path))
         has_auto_thumb = bool(self.thumbnail_path and os.path.exists(self.thumbnail_path))
         
@@ -149,7 +138,8 @@ class Video(db.Model):
             'feed_id': self.id, 
             'link': f'/api/video/{self.id}',
             
-            'relative_path': relative_dir,
+            # Use the new pre-calculated relative_path
+            'relative_path': self.relative_path or '.',
             
             'last_watched': self.last_watched.isoformat() if self.last_watched else None,
             'watched_duration': self.watched_duration,
@@ -244,6 +234,19 @@ def _scan_videos_task():
                     except OSError as e:
                         print(f"  - Skipping {filename} (OS Error): {e}")
                         continue 
+
+                    # --- UPDATED: Calculate relative_path for DB ---
+                    relative_dir = None
+                    try:
+                        norm_base_dir = os.path.normpath(video_dir)
+                        relative_dir = os.path.relpath(os.path.dirname(video_file_path), norm_base_dir)
+                        relative_dir = relative_dir.replace(os.sep, '/')
+                        if relative_dir == '.':
+                            relative_dir = None # Store as NULL
+                    except (ValueError, TypeError) as e:
+                        print(f"  - Error calculating rel_path for {video_file_path}: {e}")
+                        relative_dir = None
+                    # --- END UPDATE ---
 
                     file_format_str = file_ext.replace('.', '')
                     nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
@@ -420,8 +423,8 @@ def _scan_videos_task():
                     
                     if not title: title = video_base_filename.replace('.', ' ')
                     if not show_title:
-                        relative_path_segment = os.path.relpath(os.path.dirname(video_file_path), video_dir)
-                        show_title = "Unknown Show" if relative_path_segment == '.' else os.path.basename(relative_path_segment) 
+                        # Use the pre-calculated relative_dir to determine show_title
+                        show_title = "Unknown Show" if not relative_dir else os.path.basename(relative_dir) 
                     if not aired_date: aired_date = uploaded_date 
                     if not plot: plot = ""
 
@@ -452,6 +455,7 @@ def _scan_videos_task():
                             existing_video.duration = duration_sec
                             existing_video.video_codec = video_codec
                             existing_video.transcoded_path = transcoded_file_path
+                            existing_video.relative_path = relative_dir # --- SAVE NEW COLUMN ---
                             # We don't update video_type, as it's manually set
                             updated_count += 1
                         else:
@@ -463,6 +467,7 @@ def _scan_videos_task():
                                 uploaded_date=uploaded_date, 
                                 youtube_id=youtube_id,
                                 video_path=video_file_path,
+                                relative_path=relative_dir, # --- SAVE NEW COLUMN ---
                                 thumbnail_path=thumbnail_file_path,
                                 show_poster_path=poster_path_to_save,
                                 custom_thumbnail_path=custom_thumb_file_path,
@@ -567,6 +572,7 @@ def _scan_videos_task():
 def build_folder_tree(paths):
     tree = {}
     for path in paths:
+        if not path: continue # Skip None or empty strings
         path = path.replace('\\', '/') 
         parts = path.split('/')
         if parts == ['.'] or parts == ['']: continue
@@ -800,23 +806,166 @@ def home():
 
 ## --- API: Get All Data ---
 
-@app.route('/api/data')
-def get_data():
-    """Returns all video data, the folder tree, and smart playlists as a JSON object."""
-    videos = Video.query.order_by(Video.last_watched.desc(), Video.aired.desc()).all()
+# --- NEW: Metadata Endpoint ---
+@app.route('/api/metadata')
+def get_metadata():
+    """
+    Returns non-video data: smart playlists and the folder tree.
+    This is called once on application load.
+    """
     playlists = SmartPlaylist.query.order_by(SmartPlaylist.id.asc()).all()
-    
-    video_dtos = [v.to_dict() for v in videos]
     playlist_dtos = [p.to_dict() for p in playlists]
     
-    relative_paths = set(v['relative_path'] for v in video_dtos if v['relative_path'] != '.')
-    folder_tree = build_folder_tree(relative_paths)
+    # Build folder tree from the new `relative_path` column (much faster)
+    all_paths = db.session.query(Video.relative_path).distinct().all()
+    folder_tree = build_folder_tree([p[0] for p in all_paths if p[0]])
     
     return jsonify({
-        'articles': video_dtos, 
         'folder_tree': folder_tree,
-        'smartPlayLists': playlist_dtos
+        'smartPlaylists': playlist_dtos
     })
+
+# --- NEW: Paginated Videos Endpoint ---
+@app.route('/api/videos')
+def get_videos():
+    """
+    Returns paginated video data based on all filter, sort, and view parameters.
+    """
+    try:
+        # --- 1. Get All Parameters ---
+        page = request.args.get('page', 1, type=int)
+        per_page = 50
+        
+        # View & Filter State
+        viewType = request.args.get('viewType', 'all')
+        viewId = request.args.get('viewId', None)
+        viewAuthor = request.args.get('viewAuthor', None)
+        searchQuery = request.args.get('searchQuery', None)
+        sortOrder = request.args.get('sortOrder', 'aired_newest')
+        
+        # Global Filters
+        filterShorts = request.args.get('filterShorts', 'normal')
+        filterVR = request.args.get('filterVR', 'normal')
+        filterOptimized = request.args.get('filterOptimized', 'normal')
+
+        # --- 2. Build Base Query ---
+        base_query = Video.query
+        
+        # --- 3. Apply View Filter (viewType) ---
+        if viewType == 'favorites':
+            base_query = base_query.filter(Video.is_favorite == True)
+        elif viewType == 'watchLater':
+            base_query = base_query.filter(Video.is_watch_later == True)
+        elif viewType == 'history':
+            base_query = base_query.filter(Video.watched_duration >= 4)
+        elif viewType == 'shorts':
+            base_query = base_query.filter(Video.is_short == True)
+        elif viewType == 'optimized':
+            base_query = base_query.filter(Video.transcoded_path != None)
+        elif viewType == 'VR180':
+            base_query = base_query.filter(or_(Video.video_type == 'VR180_SBS', Video.video_type == 'VR180_TB'))
+        elif viewType == 'VR360':
+            base_query = base_query.filter(Video.video_type == 'VR360')
+        elif viewType == 'author' and viewAuthor:
+            base_query = base_query.filter(Video.show_title == viewAuthor)
+        elif viewType == 'folder' and viewId:
+            # Use the new relative_path column for efficient folder filtering
+            base_query = base_query.filter(
+                or_(
+                    Video.relative_path == viewId,
+                    Video.relative_path.like(viewId + '/%')
+                )
+            )
+        # 'all' and 'smart_playlist' (handled by client) don't add filters here
+            
+        
+        # --- 4. Apply Global Filters (Solo / Hide) ---
+        # Note: These filters are NOT applied if we are already in that view
+        
+        # Solo Logic
+        isShortsSolo = filterShorts == 'solo' and viewType != 'shorts'
+        isVRSolo = filterVR == 'solo' and viewType not in ['VR180', 'VR360']
+        isOptimizedSolo = filterOptimized == 'solo' and viewType != 'optimized'
+        isSoloActive = isShortsSolo or isVRSolo or isOptimizedSolo
+        
+        if isSoloActive:
+            solo_filters = []
+            if isShortsSolo:
+                solo_filters.append(Video.is_short == True)
+            if isVRSolo:
+                solo_filters.append(Video.video_type != None)
+            if isOptimizedSolo:
+                solo_filters.append(Video.transcoded_path != None)
+            base_query = base_query.filter(or_(*solo_filters))
+
+        # Hide Logic (only applies if Solo is not active)
+        if not isSoloActive:
+            if filterShorts == 'hide' and viewType != 'shorts':
+                base_query = base_query.filter(Video.is_short == False)
+            if filterVR == 'hide' and viewType not in ['VR180', 'VR360']:
+                base_query = base_query.filter(Video.video_type == None)
+            if filterOptimized == 'hide' and viewType != 'optimized':
+                base_query = base_query.filter(Video.transcoded_path == None)
+
+        # --- 5. Apply Search Query ---
+        if searchQuery:
+            search_term = f"%{searchQuery.lower()}%"
+            base_query = base_query.filter(
+                or_(
+                    Video.title.ilike(search_term),
+                    Video.summary.ilike(search_term),
+                    Video.show_title.ilike(search_term)
+                )
+            )
+            
+        # --- 6. Apply Sort Order ---
+        if viewType == 'history':
+            base_query = base_query.order_by(Video.last_watched.desc().nullslast())
+        else:
+            if sortOrder == 'aired_oldest':
+                base_query = base_query.order_by(Video.aired.asc().nullsfirst())
+            elif sortOrder == 'uploaded_newest':
+                base_query = base_query.order_by(Video.uploaded_date.desc().nullslast())
+            elif sortOrder == 'uploaded_oldest':
+                base_query = base_query.order_by(Video.uploaded_date.asc().nullsfirst())
+            else: # aired_newest
+                base_query = base_query.order_by(Video.aired.desc().nullslast())
+
+        # --- 7. Paginate the Final Query ---
+        pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
+        
+        videos_on_page = pagination.items
+        video_dtos = [v.to_dict() for v in videos_on_page]
+
+        # --- 8. Return Paginated Results ---
+        return jsonify({
+            'articles': video_dtos,
+            'total_items': pagination.total,
+            'total_pages': pagination.pages,
+            'current_page': page,
+            'has_next_page': pagination.has_next
+        })
+        
+    except Exception as e:
+        print(f"Error in /api/videos: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- NEW: Unpaginated endpoint for Smart Playlists ---
+@app.route('/api/videos_all')
+def get_all_videos():
+    """
+    Returns ALL videos, unpaginated.
+    Used *only* by the Smart Playlist view, which requires client-side filtering.
+    """
+    try:
+        videos = Video.query.all()
+        video_dtos = [v.to_dict() for v in videos]
+        return jsonify({'articles': video_dtos})
+    except Exception as e:
+        print(f"Error in /api/videos_all: {e}")
+        return jsonify({"error": str(e)}), 500
+
 
 ## --- API: Playlist Management ---
 
@@ -1181,9 +1330,6 @@ def create_custom_thumbnail(video_id):
 
         print(f"  - Generating custom thumb for {video.filename} at {ss_time}...")
         
-        # --- THIS IS THE FIX ---
-        # Put -ss BEFORE -i to do a fast, keyframe-based seek.
-        # This will be nearly instant and respect the timeout.
         result = subprocess.run([
             "ffmpeg",
             "-ss", ss_time,   # <--- FAST SEEK (Before -i)
@@ -1195,9 +1341,8 @@ def create_custom_thumbnail(video_id):
         ], 
         check=True, 
         capture_output=True, 
-        timeout=30  # <-- Keep the timeout!
+        timeout=30
         )
-        # --- END FIX ---
         
         if result.stdout:
             with open(output_path, "wb") as f:
@@ -1246,9 +1391,8 @@ def delete_custom_thumbnail(video_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
-    
-    
-# --- API route for manual video tagging (Short, VR, etc.) ---
+
+# --- API route for manual VR tagging ---
 @app.route('/api/video/<int:video_id>/set_tag', methods=['POST'])
 def set_video_tag(video_id):
     """
@@ -1258,7 +1402,7 @@ def set_video_tag(video_id):
     video = Video.query.get_or_404(video_id)
     data = request.get_json()
     tag = data.get('tag', 'none') # Get the new tag, default to 'none'
-
+    
     try:
         if tag == 'short':
             video.is_short = True
@@ -1272,7 +1416,7 @@ def set_video_tag(video_id):
         else: # 'none' or any other value
             video.is_short = False
             video.video_type = None
-
+        
         db.session.commit()
         print(f"  - Set tag for {video.filename} to: {tag}")
         return jsonify(video.to_dict()), 200
