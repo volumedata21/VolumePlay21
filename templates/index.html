@@ -649,7 +649,7 @@
                                             x-text="modalVideo.author || 'Unknown Author'">
                                         </a>
                                         <span class="block text-sm text-[var(--text-secondary)]"
-                                            x-text="getAuthorVideoCount(modalVideo.author) + ' Videos'">
+                                            x-text="getAuthorVideoCount(modalVideo.author)">
                                         </span>
                                     </div>
                                 </div>
@@ -694,29 +694,33 @@
                                         </button>
                                     </div>
 
-                                    <div class="grid grid-cols-2 gap-2">
+                                    <div class="grid grid-cols-4 gap-2 mb-2">
                                         <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            @click.prevent="toggleBookmark(modalVideo)">
+                                            @click.prevent="toggleBookmark(modalVideo)" title="Watch Later">
                                             <i class="material-icons" style="font-size: 20px;"
                                                 x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i>
-                                            <span x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
                                         </button>
                                         <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            @click.prevent="toggleFavorite(modalVideo)">
+                                            @click.prevent="toggleFavorite(modalVideo)" title="Favorite">
                                             <i class="material-icons" style="font-size: 20px;"
                                                 x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
-                                            <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
                                         </button>
-
+                                        <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                            title="Download original file">
+                                            <i class="material-icons" style="font-size: 20px;">download</i>
+                                        </a>
                                         <button
                                             @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Scroll to file details">
                                             <i class="material-icons" style="font-size: 20px;">info</i>
-                                            <span>More Info</span>
                                         </button>
+                                    </div>
+
+                                    <div class="grid grid-cols-2 gap-2">
                                         <button
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             @click.prevent="cyclePlaybackSpeed()" title="Change Playback Speed">
@@ -747,13 +751,6 @@
                                             </button>
                                         </template>
 
-                                        <button @click.prevent="cycleVideoTag(modalVideo)"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;"
-                                                x-text="getVideoTagIcon(modalVideo)"></i>
-                                            <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
-                                        </button>
-
                                         <template x-if="!modalVideo.has_transcode && !isTranscoding">
                                             <button @click.prevent="startTranscode(modalVideo)"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -775,13 +772,6 @@
                                                 <span>Remove Optimized</span>
                                             </button>
                                         </template>
-
-                                        <a :href="modalVideo.video_url" :download="modalVideo.filename"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Download original file">
-                                            <i class="material-icons" style="font-size: 20px;">download</i>
-                                            <span>Download</span>
-                                        </a>
                                         <template x-if="modalVideo.has_transcode">
                                             <a :href="modalVideo.transcode_download_url"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -801,6 +791,13 @@
                                                 <span>YouTube</span>
                                             </a>
                                         </template>
+
+                                        <button @click.prevent="cycleVideoTag(modalVideo)"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;"
+                                                x-text="getVideoTagIcon(modalVideo)"></i>
+                                            <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
+                                        </button>
                                     </div>
                                 </div>
 
@@ -915,29 +912,33 @@
                                     </button>
                                 </div>
 
-                                <div class="grid grid-cols-2 gap-2">
+                                <div class="grid grid-cols-4 gap-2 mb-2">
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        @click.prevent="toggleBookmark(modalVideo)">
+                                        @click.prevent="toggleBookmark(modalVideo)" title="Watch Later">
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_read_later ? 'watch_later' : 'schedule'"></i>
-                                        <span x-text="modalVideo.is_read_later ? 'Saved' : 'Watch Later'"></span>
                                     </button>
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        @click.prevent="toggleFavorite(modalVideo)">
+                                        @click.prevent="toggleFavorite(modalVideo)" title="Favorite">
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
-                                        <span x-text="modalVideo.is_favorite ? 'Favorite' : 'Favorite'"></span>
                                     </button>
-
+                                    <a :href="modalVideo.video_url" :download="modalVideo.filename"
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                        title="Download original file">
+                                        <i class="material-icons" style="font-size: 20px;">download</i>
+                                    </a>
                                     <button
                                         @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         title="Scroll to file details">
                                         <i class="material-icons" style="font-size: 20px;">info</i>
-                                        <span>More Info</span>
                                     </button>
+                                </div>
+
+                                <div class="grid grid-cols-2 gap-2">
                                     <button
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         @click.prevent="cyclePlaybackSpeed()" title="Change Playback Speed">
@@ -967,13 +968,6 @@
                                         </button>
                                     </template>
 
-                                    <button @click.prevent="cycleVideoTag(modalVideo)"
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                        <i class="material-icons" style="font-size: 20px;"
-                                            x-text="getVideoTagIcon(modalVideo)"></i>
-                                        <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
-                                    </button>
-
                                     <template x-if="!modalVideo.has_transcode && !isTranscoding">
                                         <button @click.prevent="startTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -995,14 +989,6 @@
                                             <span>Remove Optimized</span>
                                         </button>
                                     </template>
-
-                                    <a :href="modalVideo.video_url" :download="modalVideo.filename"
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        title="Download original file">
-                                        <i class="material-icons" style="font-size: 20px;">download</i>
-                                        <span>Download</span>
-                                    </a>
-
                                     <template x-if="modalVideo.has_transcode">
                                         <a :href="modalVideo.transcode_download_url"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -1021,6 +1007,13 @@
                                             <span>YouTube</span>
                                         </a>
                                     </template>
+
+                                    <button @click.prevent="cycleVideoTag(modalVideo)"
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;"
+                                            x-text="getVideoTagIcon(modalVideo)"></i>
+                                        <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
+                                    </button>
                                 </div>
                             </div>
 

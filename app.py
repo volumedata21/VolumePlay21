@@ -810,7 +810,7 @@ def home():
 @app.route('/api/metadata')
 def get_metadata():
     """
-    Returns non-video data: smart playlists and the folder tree.
+    Returns non-video data: smart playlists, the folder tree, and author counts.
     This is called once on application load.
     """
     playlists = SmartPlaylist.query.order_by(SmartPlaylist.id.asc()).all()
@@ -820,9 +820,24 @@ def get_metadata():
     all_paths = db.session.query(Video.relative_path).distinct().all()
     folder_tree = build_folder_tree([p[0] for p in all_paths if p[0]])
     
+    # --- THIS IS THE FIX ---
+    # Efficiently query all author counts at once
+    author_counts_query = db.session.query(
+        Video.show_title, 
+        func.count(Video.id)
+    ).group_by(Video.show_title).all()
+    
+    # Convert list of tuples [('Author A', 10), (None, 5)] to a dict
+    author_counts_map = {}
+    for author, count in author_counts_query:
+        key = author if author else "Unknown Show" # Match frontend logic
+        author_counts_map[key] = count
+    # --- END FIX ---
+
     return jsonify({
         'folder_tree': folder_tree,
-        'smartPlaylists': playlist_dtos
+        'smartPlaylists': playlist_dtos,
+        'author_counts': author_counts_map # --- AND THIS FIX ---
     })
 
 # --- NEW: Paginated Videos Endpoint ---

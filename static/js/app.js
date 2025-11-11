@@ -36,7 +36,8 @@ function videoApp() {
             videos: [], // This will be filled by pagination
             allVideos: [], // This is a new cache for smart playlists
             folder_tree: {},
-            smartPlaylists: []
+            smartPlaylists: [],
+            authorCounts: {}
         },
         filterHistory: [], // Filter history for back button
 
@@ -101,6 +102,7 @@ function videoApp() {
 
                 this.appData.folder_tree = data.folder_tree || {};
                 this.appData.smartPlaylists = data.smartPlaylists || [];
+                this.appData.authorCounts = data.author_counts || {};
 
             } catch (e) {
                 console.error('Error fetching metadata:', e);
@@ -190,7 +192,7 @@ function videoApp() {
         // --- Computed Properties (Getters) ---
 
         // OLD fullFilteredList is REMOVED.
-        
+
         // This getter now handles the 'smart_playlist' exception.
         get filteredVideos() {
             // --- Smart Playlist Logic (Client-Side) ---
@@ -280,7 +282,7 @@ function videoApp() {
                 }
                 return 'Scanning library... (Starting)';
             }
-            
+
             if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist') {
                 if (this.searchQuery.trim() !== '') return 'No videos match your search.';
                 if (!this.appData.videos || this.totalItems === 0) {
@@ -692,7 +694,7 @@ function videoApp() {
             if (video.video_type === 'VR360') {
                 return 'vrpano'; // Icon for VR360
             }
-            return 'label_off'; // Icon for 'None'
+            return 'label'; // <-- CHANGED from label_off
         },
 
         cycleVideoTag(video) {
@@ -718,27 +720,30 @@ function videoApp() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tag: nextTag })
             })
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to update tag');
-                return res.json();
-            })
-            .then(updatedVideo => {
-                // Update the video in the modal
-                this.modalVideo = { ...this.modalVideo, ...updatedVideo };
-                // Update the video in the main list
-                this.updateVideoData(updatedVideo);
-            })
-            .catch(err => {
-                console.error('Failed to update video tag:', err);
-            });
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to update tag');
+                    return res.json();
+                })
+                .then(updatedVideo => {
+                    // Update the video in the modal
+                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+                    // Update the video in the main list
+                    this.updateVideoData(updatedVideo);
+                })
+                .catch(err => {
+                    console.error('Failed to update video tag:', err);
+                });
         },
 
         // --- Content Rendering ---
         getAuthorVideoCount(author) {
-            // This is no longer accurate as we don't have all videos.
-            // A proper fix would be a server endpoint.
-            // For now, let's just return a placeholder.
-            return '...';
+            const authorName = author || 'Unknown Show';
+            const count = this.appData.authorCounts[authorName] || 0;
+
+            if (count === 1) {
+                return '1 Video';
+            }
+            return `${count} Videos`;
         },
 
         unescapeHTML(text) {
@@ -1079,9 +1084,9 @@ function videoApp() {
                 const params = new URLSearchParams({ page: 1, viewType: 'all' });
                 const response = await fetch(`/api/videos?${params.toString()}`);
                 const data = await response.json();
-                
+
                 const newVideoData = data.articles.find(v => v.id === videoId);
-                
+
                 if (newVideoData) {
                     this.updateVideoData(newVideoData); // Update it in the list
                     this.modalVideo = newVideoData; // Update it in the modal
@@ -1089,7 +1094,7 @@ function videoApp() {
                     this.refreshPlayerData();
                     console.log('Player source updated.');
                 }
-            } catch(e) {
+            } catch (e) {
                 console.error("Failed to refresh single video data", e);
             }
         },
