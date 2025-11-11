@@ -557,7 +557,12 @@ function videoApp() {
             }
         },
 
-        openModal(video) {
+        async openModal(video) {
+            // If another video is already in PiP, exit that mode first
+            if (document.pictureInPictureElement) {
+                await document.exitPictureInPicture();
+            }
+
             this.modalVideo = video;
             this.isModalOpen = true;
 
@@ -586,8 +591,25 @@ function videoApp() {
         },
 
         closeModal() {
-            this.stopAndSaveVideo();
+            // Only stop the video if we are NOT in Picture-in-Picture mode.
+            if (!document.pictureInPictureElement) {
+                this.stopAndSaveVideo();
+                this.modalVideo = null;
+            }
             this.isModalOpen = false;
+        },
+
+        handleEnterPiP() {
+            // This is the main action: Hide the modal when PiP starts
+            console.log("Entering PiP, hiding modal.");
+            this.isModalOpen = false;
+        },
+
+        handleLeavePiP() {
+            // This runs when the user closes the PiP window.
+            // We clean up the video completely.
+            console.log("Leaving PiP, stopping and clearing video.");
+            this.stopAndSaveVideo();
             this.modalVideo = null;
         },
 
@@ -1244,8 +1266,9 @@ function filterEditor(playlistId, appData) {
             // This now filters from the 'allVideos' cache
             const videos = appData.allVideos || [];
             const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
-            return Array.from(authors).sort();
+            return Array.from(authors).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
         },
+        
         resetValues() {
             this.textValue = '';
             this.selectedAuthors = [];

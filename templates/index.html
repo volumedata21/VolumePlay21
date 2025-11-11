@@ -617,7 +617,8 @@
                         <div class="p-0 bg-black relative z-10">
                             <video x-if="modalVideo" id="main-video-player"
                                 class="w-full max-h-[80vh] h-auto relative z-10" :src="currentVideoSrc" controls
-                                autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous">
+                                autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous"
+                                @enterpictureinpicture="handleEnterPiP()" @leavepictureinpicture="handleLeavePiP()">
 
                                 <template x-if="modalVideo.subtitle_url">
                                     <track :label="modalVideo.subtitle_label" kind="subtitles"
@@ -802,7 +803,7 @@
                                 </div>
 
                                 <div class="mt-4 bg-[#0b101a] rounded-2xl p-5">
-                                    <div class="prose prose-invert max-w-none text-[var(--text-main)] prose-p:leading-normal prose-p:font-medium"
+                                    <div class="prose prose-sm prose-invert max-w-none text-[var(--text-main)] prose-p:font-sm"
                                         style="overflow-wrap: break-word;"
                                         x-html="formatVideoDescription(modalVideo.summary || 'No summary available.')">
                                     </div>
