@@ -12,4 +12,7 @@ services:
       - DATA_DIR=/data
       - VIDEO_DIR=/videos
       - FLASK_DEBUG=0 # Always 0 for production
+#      - HW_ACCEL_TYPE=qsv
+#    devices:
+#      - /dev/dri:/dev/dri
     restart: unless-stopped

@@ -35,6 +35,21 @@ app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
+# --- Check for Hardware Acceleration ---
+# Read the environment variable to determine transcode mode
+APP_HW_ACCEL_MODE = os.environ.get('HW_ACCEL_TYPE', 'none').lower()
+if APP_HW_ACCEL_MODE == 'qsv':
+    print("***********************************************************")
+    print("*** [INFO] Hardware acceleration: Intel QSV ENABLED     ***")
+    print("*** Make sure /dev/dri is passed to this container.   ***")
+    print("***********************************************************")
+else:
+    print("***********************************************************")
+    print("*** [INFO] Hardware acceleration: DISABLED (CPU/libx264)  ***")
+    print("***********************************************************")
+sys.stdout.flush()
+# --- End Hardware Acceleration Check ---
+
 # --- Global Locks and Status Dictionaries for Background Tasks ---
 thumbnail_generation_lock = threading.Lock()
 THUMBNAIL_STATUS = {
@@ -742,18 +757,37 @@ def _transcode_video_task(video_id):
             if os.path.exists(output_path):
                 print(f"  - Transcoded file already exists: {output_path}")
             else:
-                ffmpeg_cmd = [
-                    'ffmpeg',
-                    '-i', input_path,
-                    '-c:v', 'libx264',
-                    '-preset', 'fast',
-                    '-crf', '23',
-                    '-vf', "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-                    '-c:a', 'aac',
-                    '-b:a', '128k',
-                    '-movflags', '+faststart',
-                    output_path
-                ]
+                # --- NEW: Check APP_HW_ACCEL_MODE to select encoder ---
+                if APP_HW_ACCEL_MODE == 'qsv':
+                    print(f"  - [HW-QSV] Using Intel QSV (h264_qsv) for: {video.filename}")
+                    ffmpeg_cmd = [
+                        'ffmpeg',
+                        '-hwaccel', 'qsv',     # Tell ffmpeg to use QSV for hardware acceleration
+                        '-i', input_path,
+                        '-c:v', 'h264_qsv',    # Use the QSV H.264 encoder (not libx264)
+                        '-preset', 'fast',     # QSV has its own presets
+                        '-look_ahead', '1',   # A common QSV option for quality
+                        '-vf', "scale_qsv=w='min(iw,1920)':h='min(ih,1080)'", # Use the QSV-aware scaler
+                        '-c:a', 'aac',         # Copy audio as before
+                        '-b:a', '128k',
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
+                else:
+                    # Default to software (libx264)
+                    print(f"  - [CPU] Using software (libx264) for: {video.filename}")
+                    ffmpeg_cmd = [
+                        'ffmpeg',
+                        '-i', input_path,
+                        '-c:v', 'libx264',
+                        '-preset', 'fast',
+                        '-crf', '23',
+                        '-vf', "scale=w='min(iw,1920)':h='min(ih,1080)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+                        '-c:a', 'aac',
+                        '-b:a', '128k',
+                        '-movflags', '+faststart',
+                        output_path
+                    ]
                 
                 print(f"  - Starting transcode: {' '.join(ffmpeg_cmd)}")
                 subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
