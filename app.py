@@ -762,13 +762,15 @@ def _transcode_video_task(video_id):
                     print(f"  - [HW-QSV] Using Intel QSV (h264_qsv) for: {video.filename}")
                     ffmpeg_cmd = [
                         'ffmpeg',
-                        '-hwaccel', 'qsv',     # Tell ffmpeg to use QSV for hardware acceleration
+                        '-hwaccel', 'qsv',
+                        '-hwaccel_output_format', 'qsv', # Modern FFmpeg 7 flag
                         '-i', input_path,
-                        '-c:v', 'h264_qsv',    # Use the QSV H.264 encoder (not libx264)
-                        '-preset', 'fast',     # QSV has its own presets
-                        '-look_ahead', '1',   # A common QSV option for quality
-                        '-vf', "scale_qsv=w='min(iw,1920)':h='min(ih,1080)'", # Use the QSV-aware scaler
-                        '-c:a', 'aac',         # Copy audio as before
+                        '-c:v', 'h264_qsv',
+                        '-preset', 'fast',
+                        # '-look_ahead', '1',  <-- REMOVED THIS UNRECOGNIZED OPTION
+                        # Use the modern QSV Video Post-Processing filter 'vpp_qsv'
+                        '-vf', "vpp_qsv=w='min(iw,1920)':h='min(ih,1080)'", # Modern scaler
+                        '-c:a', 'aac',
                         '-b:a', '128k',
                         '-movflags', '+faststart',
                         output_path
