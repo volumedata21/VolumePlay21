@@ -23,7 +23,7 @@ function videoApp() {
         isAutoplayEnabled: true,
         currentPlaybackSpeed: 1.0,
         playbackRates: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
-        
+
         // View & Data state
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
@@ -39,14 +39,35 @@ function videoApp() {
         videosToShow: 75,
         filterHistory: [], // Filter history for back button
 
+        // --- NEW: Global Filter Settings ---
+        filterSettings: {
+            shorts: 'normal', // 'normal', 'solo', 'hide'
+            vr: 'normal',     // 'normal', 'solo', 'hide'
+            optimized: 'normal' // 'normal', 'solo', 'hide'
+        },
+        // --- END NEW ---
+
         // --- Init ---
         init() {
             // Initialize the currentView in the global store
             Alpine.store('globalState').currentView = this.currentView;
             Alpine.store('globalState').openFolderPaths = [];
 
+            // --- NEW: Load filter settings from localStorage ---
+            const savedFilters = localStorage.getItem('filterSettings');
+            if (savedFilters) {
+                // Merge saved settings with defaults to ensure new properties are not lost
+                this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
+            }
+            // Watch for changes and save them
+            this.$watch('filterSettings', (value) => {
+                localStorage.setItem('filterSettings', JSON.stringify(value));
+            }, { deep: true });
+            // --- END NEW ---
+
             this.fetchData();
             this.startScanPolling(); // Check if a scan is running on load
+            window.addEventListener('focus', () => this.fetchData());
         },
 
         async fetchData() {
@@ -91,12 +112,10 @@ function videoApp() {
                 videos = this.appData.videos.filter(v => v.is_short);
             } else if (viewType === 'optimized') {
                 videos = this.appData.videos.filter(v => v.has_transcode);
-            // --- NEW: VR Filters ---
             } else if (viewType === 'VR180') {
-                videos = this.appData.videos.filter(v => v.video_type === 'VR180');
+                videos = this.appData.videos.filter(v => v.video_type === 'VR180_SBS' || v.video_type === 'VR180_TB');
             } else if (viewType === 'VR360') {
                 videos = this.appData.videos.filter(v => v.video_type === 'VR360');
-            // --- END NEW ---
             } else if (viewType === 'author') {
                 videos = this.appData.videos.filter(v => v.author && v.author === viewAuthor);
             } else if (viewType === 'folder') {
@@ -109,10 +128,7 @@ function videoApp() {
             else if (viewType === 'smart_playlist') {
                 const playlistId = viewState.id;
                 const playlist = this.appData.smartPlaylists.find(p => p.id === playlistId);
-
-                if (!playlist) {
-                    videos = []; // Playlist not found
-                } else {
+                if (playlist) {
                     videos = this.appData.videos;
                     playlist.filters.forEach(filter => {
                         if (filter.type === 'title') {
@@ -128,7 +144,7 @@ function videoApp() {
                             }
                         }
                         else if (filter.type === 'author') {
-                            const allowedAuthors = filter.value; 
+                            const allowedAuthors = filter.value;
                             if (allowedAuthors && allowedAuthors.length > 0) {
                                 videos = videos.filter(v => allowedAuthors.includes(v.author));
                             }
@@ -136,6 +152,50 @@ function videoApp() {
                     });
                 }
             }
+
+            // --- NEW: Global Filter Logic (Solo & Hide) ---
+            const isShortsView = viewType === 'shorts';
+            const isVRView = viewType === 'VR180' || viewType === 'VR360';
+            const isOptimizedView = viewType === 'optimized';
+
+            const isShortsSolo = this.filterSettings.shorts === 'solo' && !isShortsView;
+            const isVRSolo = this.filterSettings.vr === 'solo' && !isVRView;
+            const isOptimizedSolo = this.filterSettings.optimized === 'solo' && !isOptimizedView;
+            const isSoloActive = isShortsSolo || isVRSolo || isOptimizedSolo;
+
+            if (isSoloActive) {
+                let soloVideos = [];
+                if (isShortsSolo) {
+                    soloVideos = soloVideos.concat(videos.filter(v => v.is_short));
+                }
+                if (isVRSolo) {
+                    soloVideos = soloVideos.concat(videos.filter(v => v.video_type));
+                }
+                if (isOptimizedSolo) {
+                    soloVideos = soloVideos.concat(videos.filter(v => v.has_transcode));
+                }
+                videos = [...new Set(soloVideos)]; // De-duplicate
+            }
+
+            // Apply 'hide' filters last
+            if (this.filterSettings.shorts === 'hide' && !isShortsView) {
+                videos = videos.filter(v => !v.is_short);
+            }
+            if (this.filterSettings.vr === 'hide' && !isVRView) {
+                videos = videos.filter(v => !v.video_type);
+            }
+            if (this.filterSettings.optimized === 'hide' && !isOptimizedView) {
+                videos = videos.filter(v => !v.has_transcode);
+            }
+
+            // Apply 'hide' filters last
+            if (this.filterSettings.shorts === 'hide' && !isShortsView) {
+                videos = videos.filter(v => !v.is_short);
+            }
+            if (this.filterSettings.vr === 'hide' && !isVRView) {
+                videos = videos.filter(v => !v.video_type);
+            }
+            // --- END NEW ---
 
             if (this.searchQuery.trim() !== '') {
                 const query = this.searchQuery.toLowerCase();
@@ -159,7 +219,7 @@ function videoApp() {
                     case 'aired_oldest':
                         dateA = a.aired_date ? new Date(a.aired_date) : MAX_DATE;
                         dateB = b.aired_date ? new Date(b.aired_date) : MAX_DATE;
-                        return dateA - dateB; 
+                        return dateA - dateB;
                     case 'uploaded_newest':
                         dateA = a.uploaded ? new Date(a.uploaded) : MIN_DATE;
                         dateB = b.uploaded ? new Date(b.uploaded) : MIN_DATE;
@@ -167,12 +227,12 @@ function videoApp() {
                     case 'uploaded_oldest':
                         dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
                         dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
-                        return dateA - dateB; 
+                        return dateA - dateB;
                     case 'aired_newest':
                     default:
                         dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
                         dateB = b.aired_date ? new Date(b.aired_date) : MIN_DATE;
-                        return dateB - dateA; 
+                        return dateB - dateA;
                 }
             });
 
@@ -190,7 +250,7 @@ function videoApp() {
                 }
                 return 'Scanning library... (Starting)';
             }
-            
+
             if (this.searchQuery.trim() !== '') return 'No videos match your search.';
             if (!this.appData.videos || this.appData.videos.length === 0) {
                 return 'No videos found. Click the refresh icon to scan your library.';
@@ -205,7 +265,7 @@ function videoApp() {
             if (this.fullFilteredList.length === 0) return 'No videos found for this view.';
             return 'No videos found.';
         },
-        
+
         get thumbnailButtonText() {
             if (!this.isGeneratingThumbnails) {
                 return 'Gen. Missing Thumbs';
@@ -474,10 +534,8 @@ function videoApp() {
             else if (type === 'history') { this.currentTitle = 'History'; }
             else if (type === 'shorts') { this.currentTitle = 'Shorts'; }
             else if (type === 'optimized') { this.currentTitle = 'Optimized'; }
-            // --- NEW: VR Titles ---
             else if (type === 'VR180') { this.currentTitle = 'VR 180 Videos'; }
             else if (type === 'VR360') { this.currentTitle = 'VR 360 Videos'; }
-            // --- END NEW ---
             else if (type === 'author') { this.currentTitle = `Author: ${author || 'Unknown'}`; }
             else if (type === 'folder') {
                 const pathSegments = id ? id.split('/').filter(Boolean) : [];
@@ -551,7 +609,7 @@ function videoApp() {
         playNextVideo() {
             if (!this.modalVideo) return;
             const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
-            
+
             if (currentIndex !== -1 && currentIndex + 1 < this.filteredVideos.length) {
                 const nextVideo = this.filteredVideos[currentIndex + 1];
                 this.stopAndSaveVideo();
@@ -564,7 +622,7 @@ function videoApp() {
         playPreviousVideo() {
             if (!this.modalVideo) return;
             const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
-            
+
             if (currentIndex > 0) {
                 const prevVideo = this.filteredVideos[currentIndex - 1];
                 this.stopAndSaveVideo();
@@ -578,7 +636,6 @@ function videoApp() {
             if (!this.$refs.videoPlayer) return;
             const player = this.$refs.videoPlayer;
             player.pause();
-            // We assume 30fps for a standard frame step
             player.currentTime += (1 / 30);
         },
 
@@ -586,7 +643,6 @@ function videoApp() {
             if (!this.$refs.videoPlayer) return;
             const player = this.$refs.videoPlayer;
             player.pause();
-            // We assume 30fps for a standard frame step
             player.currentTime -= (1 / 30);
         },
 
@@ -608,7 +664,91 @@ function videoApp() {
             }
             this.setPlaybackSpeed(this.playbackRates[nextIndex]);
         },
+        // Add these new functions inside your videoApp object in app.js
 
+        /**
+         * Gets the text for the new unified tag button.
+         */
+        getVideoTagText(video) {
+            if (video.is_short) {
+                return 'Tag: Short';
+            }
+            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') {
+                return 'Tag: VR180';
+            }
+            if (video.video_type === 'VR360') {
+                return 'Tag: VR360';
+            }
+            return 'Set Tag';
+        },
+
+        /**
+         * Gets the icon for the new unified tag button.
+         */
+        getVideoTagIcon(video) {
+            if (video.is_short) {
+                return 'phone_android'; // Icon for Shorts
+            }
+            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') {
+                return 'view_in_ar'; // Icon for VR180
+            }
+            if (video.video_type === 'VR360') {
+                return 'vrpano'; // Icon for VR360
+            }
+            return 'label_off'; // Icon for 'None'
+        },
+
+        /**
+         * Cycles through the available tags: None -> Short -> VR180 -> VR360 -> None
+         * and sends the update to the new backend endpoint.
+         */
+        cycleVideoTag(video) {
+            let currentTag = 'none';
+            if (video.is_short) {
+                currentTag = 'short';
+            } else if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') {
+                currentTag = 'vr180';
+            } else if (video.video_type === 'VR360') {
+                currentTag = 'vr360';
+            }
+
+            // Define the cycle
+            const cycle = {
+                'none': 'short',
+                'short': 'vr180',
+                'vr180': 'vr360',
+                'vr360': 'none',
+            };
+            const nextTag = cycle[currentTag] || 'none';
+
+            // Send the API request to our new endpoint
+            fetch(`/api/video/${video.id}/set_tag`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ tag: nextTag })
+            })
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to update tag');
+                    return res.json();
+                })
+                .then(updatedVideo => {
+                    // 1. Update the video in the modal
+                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+
+                    // 2. Update the video in the main list so the grid view updates
+                    const index = this.appData.allVideos.findIndex(v => v.id === video.id);
+                    if (index !== -1) {
+                        // This ensures the main array has the new data
+                        this.appData.allVideos[index] = { ...this.appData.allVideos[index], ...updatedVideo };
+                    }
+                })
+                .catch(err => {
+                    console.error('Failed to update video tag:', err);
+                    // Optionally show an error to the user
+                });
+        },
         // --- Content Rendering ---
         getAuthorVideoCount(author) {
             if (!author || !this.appData.videos) return 0;
@@ -683,7 +823,7 @@ function videoApp() {
             const i = Math.floor(Math.log(bytes) / Math.log(k));
             return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
         },
-        
+
         formatDuration(totalSeconds) {
             if (!totalSeconds || totalSeconds < 1) {
                 return '0:00';
@@ -905,7 +1045,7 @@ function videoApp() {
                 this.isTranscoding = false;
             }
         },
-        
+
         async checkTranscodeStatus(videoId) {
             try {
                 const response = await fetch('/api/transcode/status');
@@ -919,7 +1059,7 @@ function videoApp() {
                 console.error('Error checking transcode status:', e);
             }
         },
-        
+
         startTranscodePolling(videoId) {
             if (this.transcodePollInterval) clearInterval(this.transcodePollInterval);
             this.isTranscoding = true;
@@ -951,7 +1091,7 @@ function videoApp() {
         },
 
         async refreshModalVideoData() {
-            await this.fetchData(); 
+            await this.fetchData();
             const newVideoData = this.appData.videos.find(v => v.id === this.modalVideo.id);
             if (newVideoData) {
                 this.modalVideo = newVideoData;
@@ -969,7 +1109,7 @@ function videoApp() {
                 }
             });
         },
-        
+
         updateVideoData(updatedVideo) {
             // Helper to update the video in the modal and main list
             const index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
@@ -982,7 +1122,7 @@ function videoApp() {
         // --- Custom Thumbnail Functions ---
         async createCustomThumb() {
             if (this.isCreatingThumb || !this.$refs.videoPlayer) return;
-            
+
             this.isCreatingThumb = true;
             const currentTime = this.$refs.videoPlayer.currentTime;
             const videoId = this.modalVideo.id;
@@ -993,7 +1133,7 @@ function videoApp() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ timestamp: currentTime })
                 });
-                
+
                 const updatedVideo = await response.json();
                 if (response.ok) {
                     this.updateVideoData(updatedVideo);
@@ -1009,7 +1149,7 @@ function videoApp() {
 
         async deleteCustomThumb() {
             if (this.isCreatingThumb) return;
-            
+
             this.isCreatingThumb = true;
             const videoId = this.modalVideo.id;
 
@@ -1017,7 +1157,7 @@ function videoApp() {
                 const response = await fetch(`/api/video/${videoId}/thumbnail/delete_custom`, {
                     method: 'POST'
                 });
-                
+
                 const updatedVideo = await response.json();
                 if (response.ok) {
                     this.updateVideoData(updatedVideo);
@@ -1029,14 +1169,31 @@ function videoApp() {
             } finally {
                 this.isCreatingThumb = false;
             }
+        },
+
+
+
+        // --- Global Filter Button Helpers ---
+        cycleShortsFilter() {
+            if (this.filterSettings.shorts === 'normal') this.filterSettings.shorts = 'solo';
+            else if (this.filterSettings.shorts === 'solo') this.filterSettings.shorts = 'hide';
+            else if (this.filterSettings.shorts === 'hide') this.filterSettings.shorts = 'normal';
+        },
+        cycleVRFilter() {
+            if (this.filterSettings.vr === 'normal') this.filterSettings.vr = 'solo';
+            else if (this.filterSettings.vr === 'solo') this.filterSettings.vr = 'hide';
+            else if (this.filterSettings.vr === 'hide') this.filterSettings.vr = 'normal';
+        },
+        cycleOptimizedFilter() {
+            if (this.filterSettings.optimized === 'normal') this.filterSettings.optimized = 'solo';
+            else if (this.filterSettings.optimized === 'solo') this.filterSettings.optimized = 'hide';
+            else if (this.filterSettings.optimized === 'hide') this.filterSettings.optimized = 'normal';
         }
     };
 }
 
 /**
  * Globally accessible function to seek the main video player.
- * @param {Event} event - The click event.
- * @param {string} timestampString - The timestamp (e.g., "0:10:26").
  */
 function seekVideo(event, timestampString) {
     event.preventDefault();

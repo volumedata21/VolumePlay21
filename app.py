@@ -90,7 +90,7 @@ class Video(db.Model):
     duration = db.Column(db.Integer, default=0)
     video_codec = db.Column(db.String(50), nullable=True)
     transcoded_path = db.Column(db.String(1000), nullable=True)
-    video_type = db.Column(db.String(50), nullable=True)
+    video_type = db.Column(db.String(50), nullable=True) # e.g., "VR180_SBS", "VR180_TB", "VR360"
 
     def to_dict(self):
         """
@@ -186,11 +186,9 @@ class SmartPlaylist(db.Model):
             'filters': json.loads(self.filters) if self.filters else [], 
         }
 
-# --- THIS IS THE FIX ---
-# Create tables *before* app context, ensuring they exist before requests.
+# --- Create tables *before* app context, ensuring they exist before requests. ---
 with app.app_context():
     db.create_all()
-# --- END FIX ---
 
 
 ## --- Helper Functions ---
@@ -257,14 +255,13 @@ def _scan_videos_task():
                     effective_height = 0
                     duration_sec = 0
                     video_codec = 'unknown'
-                    video_type = None
                     
                     try:
                         ffprobe_cmd = [
                             'ffprobe',
                             '-v', 'error',
                             '-select_streams', 'v:0',
-                            '-show_entries', 'stream=width,height,duration,codec_name:stream_tags=rotate:stream_side_data=rotation,projection,stereo_mode:stream_disposition=rotate',
+                            '-show_entries', 'stream=width,height,duration,codec_name:stream_tags=rotate:stream_side_data=rotation:stream_disposition=rotate',
                             '-of', 'json',
                             video_file_path
                         ]
@@ -278,9 +275,6 @@ def _scan_videos_task():
                             duration_sec = int(float(stream.get('duration', '0')))
                             video_codec = stream.get('codec_name', 'unknown').upper()
                             
-                            projection = stream.get('projection', None)
-                            stereo_mode = stream.get('stereo_mode', None)
-
                             rotation = 0
                             try: rotation_str = stream.get('tags', {}).get('rotate', '0'); rotation = int(float(rotation_str))
                             except (ValueError, TypeError): rotation = 0
@@ -302,14 +296,7 @@ def _scan_videos_task():
                             if effective_height > effective_width:
                                 is_short = True
                             
-                            aspect_ratio = effective_width / effective_height if effective_height > 0 else 0
-
-                            if projection == 'equirectangular':
-                                video_type = 'VR360'
-                            elif stereo_mode in ['sbs', 'tb'] and (abs(aspect_ratio - 2.0) < 0.01 or abs(aspect_ratio - 1.0) < 0.01):
-                                video_type = 'VR180'
-                            
-                            print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short} | video_type: {video_type}")
+                            print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short}")
                             sys.stdout.flush()
                         else:
                             print(f"  - ffprobe WARN: No streams found for {filename}.")
@@ -465,7 +452,7 @@ def _scan_videos_task():
                             existing_video.duration = duration_sec
                             existing_video.video_codec = video_codec
                             existing_video.transcoded_path = transcoded_file_path
-                            existing_video.video_type = video_type
+                            # We don't update video_type, as it's manually set
                             updated_count += 1
                         else:
                             new_video = Video(
@@ -491,7 +478,7 @@ def _scan_videos_task():
                                 duration=duration_sec,
                                 video_codec=video_codec,
                                 transcoded_path=transcoded_file_path,
-                                video_type=video_type
+                                video_type=None # Always defaults to None
                             )
                             db.session.add(new_video)
                             added_count += 1
@@ -786,9 +773,9 @@ def _transcode_video_task(video_id):
 ## --- Initialization Function ---
 def initialize_database():
     """Checks if DB is empty and starts initial scan."""
+    # This is called *after* db.create_all()
     with app.app_context():
         print("Initializing database...")
-        # db.create_all() # This is now at the top
         video_count = Video.query.count()
         if video_count == 0:
             print("No videos found. Acquiring scan lock for initial scan...")
@@ -802,8 +789,6 @@ def initialize_database():
         else:
             print(f"Database already contains {video_count} videos.")
         print("Database initialization complete. Server is starting.")
-
-initialize_database() # Call this once on startup
 
 
 ## --- Main Routes ---
@@ -1196,15 +1181,23 @@ def create_custom_thumbnail(video_id):
 
         print(f"  - Generating custom thumb for {video.filename} at {ss_time}...")
         
+        # --- THIS IS THE FIX ---
+        # Put -ss BEFORE -i to do a fast, keyframe-based seek.
+        # This will be nearly instant and respect the timeout.
         result = subprocess.run([
             "ffmpeg",
-            "-ss", ss_time,
+            "-ss", ss_time,   # <--- FAST SEEK (Before -i)
             "-i", input_path,
             "-vframes", "1",
             "-q:v", "2",
             "-f", "image2pipe",
             "pipe:1"
-        ], check=True, capture_output=True, timeout=30)
+        ], 
+        check=True, 
+        capture_output=True, 
+        timeout=30  # <-- Keep the timeout!
+        )
+        # --- END FIX ---
         
         if result.stdout:
             with open(output_path, "wb") as f:
@@ -1253,11 +1246,45 @@ def delete_custom_thumbnail(video_id):
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+    
+    
+# --- API route for manual video tagging (Short, VR, etc.) ---
+@app.route('/api/video/<int:video_id>/set_tag', methods=['POST'])
+def set_video_tag(video_id):
+    """
+    Manually sets the video tag. This can be 'short', 'vr180', 'vr360', or 'none'.
+    This single endpoint manages both the 'is_short' boolean and 'video_type' string.
+    """
+    video = Video.query.get_or_404(video_id)
+    data = request.get_json()
+    tag = data.get('tag', 'none') # Get the new tag, default to 'none'
+
+    try:
+        if tag == 'short':
+            video.is_short = True
+            video.video_type = None
+        elif tag == 'vr180':
+            video.is_short = False
+            video.video_type = 'VR180_SBS' # Default to Side-by-Side
+        elif tag == 'vr360':
+            video.is_short = False
+            video.video_type = 'VR360'
+        else: # 'none' or any other value
+            video.is_short = False
+            video.video_type = None
+
+        db.session.commit()
+        print(f"  - Set tag for {video.filename} to: {tag}")
+        return jsonify(video.to_dict()), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
 
 
 ## --- Main Execution ---
 
+initialize_database()
 if __name__ == '__main__':
-    initialize_database()
+    # This block is now only for local development (e.g., `python app.py`)
     debug_mode = os.environ.get('FLASK_DEBUG') == '1'
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)
