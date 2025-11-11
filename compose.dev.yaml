@@ -28,4 +28,4 @@ services:
     # (CHANGED)
     # We override the Dockerfile's CMD (which uses gunicorn)
     # to use Flask's built-in server, which is better for development.
-    command: flask run --host=0.0.0.0 --port=5000
+    # command: flask run --host=0.0.0.0 --port=5000

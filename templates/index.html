@@ -577,15 +577,21 @@
                 </template>
             </div>
 
-            <div class="pb-8 text-center" x-show="fullFilteredList.length > videosToShow" x-cloak>
+            <div class="pb-8 text-center"
+                x-show="!isLoading && (currentPage <= totalPages) && currentView.type !== 'smart_playlist'" x-cloak>
                 <p class="mb-2 text-xs text-[var(--text-secondary)]">
-                    Showing <span x-text="filteredVideos.length"></span> of <span
-                        x-text="fullFilteredList.length"></span> videos
+                    Showing <span x-text="appData.videos.length"></span> of <span x-text="totalItems"></span> videos
                 </p>
                 <button @click="loadMoreVideos()"
                     class="rounded-md bg-[var(--bg-highlight)] px-5 py-2.5 text-sm font-medium text-[var(--text-bright)] hover:bg-[var(--bg-highlight-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--highlight-ring)] focus:ring-opacity-50">
-                    Load More (75)
+                    Load More (50)
                 </button>
+            </div>
+
+            <!-- Also, let's add a loading spinner for when it's fetching -->
+            <div class="pb-8 text-center" x-show="isLoading" x-cloak>
+                <span class="material-icons animate-spin text-[var(--text-highlight)]"
+                    style="font-size: 40px;">sync</span>
             </div>
         </main>
     </div>

@@ -1,28 +1,34 @@
-# Use a modern, slim Python base image
-FROM python:3.11-slim
+#
+# NEW DOCKERFILE (With ENTRYPOINT fix)
+#
+# Start from the official jrottenberg/ffmpeg image
+FROM jrottenberg/ffmpeg:7.1-vaapi2404
 
-# --- NEW ---
-# Install ffmpeg for thumbnail generation and clean up apt cache
-RUN apt-get update && apt-get install -y ffmpeg --no-install-recommends && rm -rf /var/lib/apt/lists/*
-# --- END NEW ---
+# We are root by default
+USER root
 
-# Set the working directory inside the container
+# 1. Install Python
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-dev \
+    build-essential \
+&& rm -rf /var/lib/apt/lists/*
+
+# 2. Set up the working directory
 WORKDIR /app
 
-# Copy the requirements file first to leverage Docker cache
+# 3. Install your Python requirements
 COPY requirements.txt .
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Install Python dependencies
-# We add gunicorn as a production-ready web server
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy the rest of the application code
-# (app.py, templates/, static/)
+# 4. Copy the rest of your application code
 COPY . .
 
-# Expose the port the app will run on
-EXPOSE 5000
+# --- THIS IS THE FIX ---
+# Clear the base image's ENTRYPOINT
+ENTRYPOINT []
+# --- END FIX ---
 
-# Set the command to run the application using gunicorn
-# This is more robust than `flask run` for production
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# 5. Set the default command to run your app
+CMD ["python3", "app.py"]
