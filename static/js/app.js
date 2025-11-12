@@ -21,9 +21,12 @@ function videoApp() {
         cleanupStatus: { status: 'idle', message: '', progress: 0 },
         cleanupPollInterval: null,
 
-        isTranscoding: false,
-        transcodeStatus: { status: 'idle', message: '', video_id: null },
+        // --- NEW: Transcode Queue Logic ---
+        transcodeQueue: [], // An array of video IDs waiting to be transcoded
+        transcodeStatus: { status: 'idle', message: '', video_id: null }, // The *currently running* job
         transcodePollInterval: null,
+        // --- END NEW ---
+
         isCreatingThumb: false,
 
         // Player state
@@ -78,24 +81,11 @@ function videoApp() {
             this.fetchMetadata(); // Load folders/playlists once
             this.fetchVideos(true); // Load first page of videos
             
-            // Check for any running tasks on load
+            // Start all background pollers
             this.startScanPolling();
             this.startThumbnailPolling();
             this.startCleanupPolling();
-
-            // Refresh data on tab focus
-            window.addEventListener('focus', () => {
-                if (!this.isAnyTaskRunning()) {
-                    this.fetchVideos(true);
-                }
-            });
-
-            // Refresh every hour
-            setInterval(() => {
-                if (!this.isModalOpen && !this.isAnyTaskRunning()) {
-                    this.fetchVideos(true);
-                }
-            }, 3600000);
+            this.startTranscodePolling(); // NEW: This now runs 24/7
         },
 
         // --- API Fetching ---
@@ -123,7 +113,7 @@ function videoApp() {
                 this.appData.videos = [];
             }
 
-            if (this.currentPage > this.totalPages) {
+            if (this.currentPage > this.totalPages && isNewQuery === false) {
                 return;
             }
 
@@ -152,6 +142,7 @@ function videoApp() {
             // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
+                per_page: 30, // Using 30 to make grids line up
                 searchQuery: this.searchQuery || '',
                 sortOrder: this.sortOrder,
                 viewType: this.currentView.type || 'all',
@@ -249,6 +240,10 @@ function videoApp() {
                     dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
                     dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
                     return dateA - dateB;
+                case 'duration_longest':
+                    return (b.duration || 0) - (a.duration || 0);
+                case 'duration_shortest':
+                    return (a.duration || 0) - (b.duration || 0);
                 case 'aired_newest':
                 default:
                     dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
@@ -291,12 +286,7 @@ function videoApp() {
         },
 
         get libraryTaskButtonText() {
-            if (this.scanType === 'new') {
-                return this.scanStatus.progress > 0 ? `Scanning... ${this.scanStatus.progress}` : 'Scanning New...';
-            }
-            if (this.scanType === 'full') {
-                return this.scanStatus.progress > 0 ? `Scanning... ${this.scanStatus.progress}` : 'Scanning All...';
-            }
+            // Note: Scan buttons are handled separately in HTML
             if (this.isGeneratingThumbnails) {
                 return this.thumbnailStatus.total > 0 ? `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}` : 'Generating...';
             }
@@ -542,7 +532,6 @@ function videoApp() {
             this.modalVideo = video;
             this.isModalOpen = true;
             this.currentVideoSrc = video.has_transcode ? video.transcode_url : video.video_url;
-            this.checkTranscodeStatus(video.id);
 
             this.$nextTick(() => {
                 if (this.$refs.videoPlayer) {
@@ -642,7 +631,6 @@ function videoApp() {
             player.currentTime -= (1 / 30);
         },
 
-        // --- Playback Speed Controls (THE FIX) ---
         setPlaybackSpeed(speed) {
             const newSpeed = parseFloat(speed);
             if (isNaN(newSpeed)) return;
@@ -660,7 +648,6 @@ function videoApp() {
             }
             this.setPlaybackSpeed(this.playbackRates[nextIndex]);
         },
-        // --- END FIX ---
 
         // --- Tag Button Functions ---
         getVideoTagText(video) {
@@ -849,6 +836,7 @@ function videoApp() {
         async scanNewVideos() {
             if (this.isAnyTaskRunning()) return;
             this.scanType = 'new';
+            this.isScanning = true; // Set general scanning flag
             try {
                 const response = await fetch('/api/scan_videos', {
                     method: 'POST',
@@ -861,10 +849,12 @@ function videoApp() {
                     const result = await response.json();
                     console.error('Failed to start scan:', result.error);
                     this.scanType = 'idle';
+                    this.isScanning = false;
                 }
             } catch (e) {
                 console.error('Error starting scan:', e);
                 this.scanType = 'idle';
+                this.isScanning = false;
             }
         },
 
@@ -874,6 +864,7 @@ function videoApp() {
                 return;
             }
             this.scanType = 'full';
+            this.isScanning = true; // Set general scanning flag
             try {
                 const response = await fetch('/api/scan_videos', { 
                     method: 'POST',
@@ -886,10 +877,12 @@ function videoApp() {
                     const result = await response.json();
                     console.error('Failed to start scan:', result.error);
                     this.scanType = 'idle';
+                    this.isScanning = false;
                 }
             } catch (e) {
                 console.error('Error starting scan:', e);
                 this.scanType = 'idle';
+                this.isScanning = false;
             }
         },
 
@@ -923,7 +916,7 @@ function videoApp() {
                 }
             };
             
-            // poll(); // Do not poll immediately, let the UI state set first
+            // Do not poll immediately, let the UI state set first
             this.scanPollInterval = setInterval(poll, 3000);
         },
 
@@ -943,6 +936,7 @@ function videoApp() {
 
         async generateMissingThumbnails() {
             if (this.isAnyTaskRunning()) return;
+            this.isGeneratingThumbnails = true; // Set state immediately
             try {
                 const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
                 if (response.status === 200 || response.status === 202) {
@@ -950,9 +944,11 @@ function videoApp() {
                 } else {
                     const result = await response.json();
                     console.error('Failed to start thumbnail generation:', result.error);
+                    this.isGeneratingThumbnails = false;
                 }
             } catch (e) {
                 console.error('Error starting thumbnail generation:', e);
+                this.isGeneratingThumbnails = false;
             }
         },
 
@@ -979,7 +975,7 @@ function videoApp() {
                 }
             };
             
-            // poll(); // Do not poll immediately
+            // Do not poll immediately
             this.thumbnailPollInterval = setInterval(poll, 2000);
         },
 
@@ -1040,7 +1036,7 @@ function videoApp() {
                 }
             };
             
-            // poll(); // Do not poll immediately
+            // Do not poll immediately
             this.cleanupPollInterval = setInterval(poll, 3000);
         },
 
@@ -1057,28 +1053,28 @@ function videoApp() {
             }
         },
 
+        // --- Transcode Queue Logic ---
+        isQueued(videoId) {
+            return this.transcodeQueue.includes(videoId);
+        },
+        isCurrentlyTranscoding(videoId) {
+            return this.transcodeStatus.video_id === videoId && this.transcodeStatus.status !== 'idle';
+        },
+        isOptimizing(videoId) {
+            return this.isQueued(videoId) || this.isCurrentlyTranscoding(videoId);
+        },
+
         async startTranscode(video) {
-            if (this.isTranscoding) return;
-            this.isTranscoding = true;
-            this.transcodeStatus = { status: 'starting', message: 'Starting...', video_id: video.id };
-            try {
-                const response = await fetch(`/api/video/${video.id}/transcode/start`, { method: 'POST' });
-                if (response.status === 202 || response.status === 409) {
-                    this.startTranscodePolling(video.id);
-                } else {
-                    const result = await response.json();
-                    console.error('Failed to start transcode:', result.error);
-                    this.isTranscoding = false;
-                }
-            } catch (e) {
-                console.error('Error starting transcode:', e);
-                this.isTranscoding = false;
-            }
+            if (this.isOptimizing(video.id)) return; // Already queued or running
+            this.transcodeQueue.push(video.id);
+            this.processTranscodeQueue(); // Try to start the queue
         },
 
         async deleteTranscode(video) {
-            if (this.isTranscoding) return;
-            this.isTranscoding = true;
+            // This only deletes completed transcodes.
+            // We won't add logic to cancel a running/queued transcode for simplicity.
+            if (this.isCurrentlyTranscoding(video.id)) return; 
+
             try {
                 const response = await fetch(`/api/video/${video.id}/transcode/delete`, { method: 'POST' });
                 const updatedVideo = await response.json();
@@ -1091,75 +1087,71 @@ function videoApp() {
                 }
             } catch (e) {
                 console.error('Error deleting transcode:', e);
-            } finally {
-                this.isTranscoding = false;
             }
         },
+        
+        async processTranscodeQueue() {
+            if (this.transcodeStatus.status !== 'idle') return; // A job is already running
+            if (this.transcodeQueue.length === 0) return; // Queue is empty
 
-        async checkTranscodeStatus(videoId) {
+            const nextVideoId = this.transcodeQueue[0]; // Get the next video ID (don't remove yet)
+            
             try {
-                const response = await fetch('/api/transcode/status');
-                const data = await response.json();
-                if (data.status !== 'idle' && data.video_id === videoId) {
-                    this.isTranscoding = true;
-                    this.transcodeStatus = data;
-                    this.startTranscodePolling(videoId);
+                const response = await fetch(`/api/video/${nextVideoId}/transcode/start`, { method: 'POST' });
+                
+                if (response.status === 202) { // 202 = Accepted
+                    // Success! Server started the job. Remove it from queue.
+                    this.transcodeQueue.shift(); 
+                    // Manually set status so UI updates *instantly*
+                    this.transcodeStatus = { status: 'starting', message: 'Starting...', video_id: nextVideoId };
+                } else if (response.status === 409) { // 409 = Conflict
+                    // This shouldn't happen, but it means the poller will just take over.
+                    console.warn('Transcode already running, poller will take over.');
+                } else {
+                    // The request failed
+                    const result = await response.json();
+                    console.error('Failed to start transcode:', result.error);
+                    this.transcodeQueue.shift(); // Remove the failing job from queue
                 }
             } catch (e) {
-                console.error('Error checking transcode status:', e);
+                console.error('Error starting transcode:', e);
+                this.transcodeQueue.shift(); // Remove the failing job
             }
         },
 
-        startTranscodePolling(videoId) {
+        startTranscodePolling() {
+            // This is a global, 24/7 poller that manages the queue
             if (this.transcodePollInterval) clearInterval(this.transcodePollInterval);
-            this.isTranscoding = true;
+            
             this.transcodePollInterval = setInterval(async () => {
-                try {
-                    const response = await fetch('/api/transcode/status');
-                    const data = await response.json();
-                    this.transcodeStatus = data;
-                    if (data.status === 'idle' || data.status === 'error') {
-                        this.stopTranscodePolling(data.status === 'idle');
-                    }
-                } catch (e) {
-                    this.transcodeStatus = { status: 'error', message: 'Poll failed' };
-                    this.stopTranscodePolling(false);
-                }
-            }, 2500);
-        },
+                const response = await fetch('/api/transcode/status');
+                const data = await response.json();
+                const oldStatus = this.transcodeStatus.status;
+                const oldVideoId = this.transcodeStatus.video_id;
+                this.transcodeStatus = data;
 
-        stopTranscodePolling(wasSuccessful) {
-            if (this.transcodePollInterval) {
-                clearInterval(this.transcodePollInterval);
-                this.transcodePollInterval = null;
-            }
-            this.isTranscoding = false;
-            this.transcodeStatus = { status: 'idle', message: '', video_id: null };
-            if (wasSuccessful) {
-                this.refreshModalVideoData(this.modalVideo.id);
-            }
+                // A job just finished (was running, now idle)
+                if (oldStatus !== 'idle' && data.status === 'idle') {
+                    console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
+                    this.refreshModalVideoData(oldVideoId); // Refresh the video that *just* finished
+                    this.processTranscodeQueue(); // Check for the next job
+                }
+                
+                // No job is running, but the queue has items
+                if (data.status === 'idle' && this.transcodeQueue.length > 0) {
+                    this.processTranscodeQueue();
+                }
+            }, 3000); // Poll every 3 seconds
         },
 
         async refreshModalVideoData(videoId) {
+            if (!videoId) return;
             try {
-                // This is a lightweight way to get just one video's fresh data
-                const response = await fetch(`/api/videos?viewType=video&viewId=${videoId}`);
-                const data = await response.json();
-                
-                if (data.articles && data.articles.length > 0) {
-                    const newVideoData = data.articles[0];
-                    this.updateVideoData(newVideoData);
-                    this.modalVideo = newVideoData;
-                    this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
-                    this.refreshPlayerData();
-                    console.log('Player source updated.');
-                } else {
-                    // Fallback to full refresh if single fetch fails
-                    this.fetchVideos(true);
-                }
-            } catch (e) {
-                console.error("Failed to refresh single video data", e);
+                // We'll just re-fetch all video data to refresh.
+                // A more complex solution would fetch just one video.
                 this.fetchVideos(true);
+            } catch (e) {
+                console.error("Failed to refresh video data after transcode", e);
             }
         },
 

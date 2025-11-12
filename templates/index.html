@@ -18,15 +18,18 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
+
         .aspect-box {
             position: relative;
             width: 100%;
             background-color: var(--bg-highlight);
             transition: padding-top 0.3s ease-in-out;
         }
+
         .aspect-16-9 {
             padding-top: 56.25%;
         }
+
         .aspect-9-16 {
             padding-top: 177.78%;
         }
@@ -82,7 +85,7 @@
                         class="material-icons" style="font-size:20px;">history</i> History</a>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
-                
+
                 <div class="pt-2" x-cloak>
                     <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
                     <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
@@ -334,31 +337,35 @@
                 </div>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
-                
+
                 <div class="pt-2 px-4 pb-4 space-y-2" x-cloak>
                     <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Library Tools</h3>
-                    
+
                     <button @click="scanNewVideos()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
+                        <i class="material-icons" style="font-size:20px;"
+                            :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
                         <span x-text="scanType === 'new' ? 'Scanning New...' : 'Scan New Videos'"></span>
                     </button>
 
                     <button @click="generateMissingThumbnails()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
+                        <i class="material-icons" style="font-size:20px;"
+                            :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
                         <span x-text="isGeneratingThumbnails ? libraryTaskButtonText : 'Gen. Missing Thumbs'"></span>
                     </button>
 
                     <button @click="cleanupLibrary()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
+                        <i class="material-icons" style="font-size:20px;"
+                            :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
                         <span x-text="isCleaningUp ? 'Pruning...' : 'Prune Library'"></span>
                     </button>
-                    
+
                     <button @click="scanFullLibrary()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
+                        <i class="material-icons" style="font-size:20px;"
+                            :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
                         <span x-text="scanType === 'full' ? 'Scanning All...' : 'Scan Entire Library'"></span>
                     </button>
                 </div>
@@ -747,18 +754,35 @@
                                             </button>
                                         </template>
 
-                                        <template x-if="!modalVideo.has_transcode && !isTranscoding">
+                                        <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                             <button @click.prevent="startTranscode(modalVideo)"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                                 <i class="material-icons" style="font-size: 20px;">movie_filter</i>
                                                 <span>Optimize</span>
                                             </button>
                                         </template>
-                                        <template x-if="isTranscoding && modalVideo.id === transcodeStatus.video_id">
+                                        <!-- Show 'Optimizing...' button -->
+                                        <template x-if="isCurrentlyTranscoding(modalVideo.id)">
                                             <button disabled
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                                 <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
                                                 <span>Optimizing...</span>
+                                            </button>
+                                        </template>
+                                        <!-- Show 'Queued' button -->
+                                        <template x-if="isQueued(modalVideo.id)">
+                                            <button disabled
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                                <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
+                                                <span>Queued</span>
+                                            </button>
+                                        </template>
+                                        <!-- Show 'Remove Optimized' button -->
+                                        <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                            <button @click.prevent="deleteTranscode(modalVideo)"
+                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                <span>Remove Optimized</span>
                                             </button>
                                         </template>
                                         <template x-if="modalVideo.has_transcode && !isTranscoding">
@@ -940,56 +964,37 @@
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
 
-                                    <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
-                                        <button @click.prevent="createCustomThumb()"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
-                                            <span>Create Thumb</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
-                                        <button @click.prevent="deleteCustomThumb()"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                            <span>Remove Thumb</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="isCreatingThumb">
-                                        <button disabled
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
-                                            <span>Working...</span>
-                                        </button>
-                                    </template>
-
-                                    <template x-if="!modalVideo.has_transcode && !isTranscoding">
+                                    <!-- Show 'Optimize' button -->
+                                    <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                         <button @click.prevent="startTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                             <i class="material-icons" style="font-size: 20px;">movie_filter</i>
                                             <span>Optimize</span>
                                         </button>
                                     </template>
-                                    <template x-if="isTranscoding && modalVideo.id === transcodeStatus.video_id">
+                                    <!-- Show 'Optimizing...' button -->
+                                    <template x-if="isCurrentlyTranscoding(modalVideo.id)">
                                         <button disabled
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                             <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
                                             <span>Optimizing...</span>
                                         </button>
                                     </template>
-                                    <template x-if="modalVideo.has_transcode && !isTranscoding">
+                                    <!-- Show 'Queued' button -->
+                                    <template x-if="isQueued(modalVideo.id)">
+                                        <button disabled
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
+                                            <span>Queued</span>
+                                        </button>
+                                    </template>
+                                    <!-- Show 'Remove Optimized' button -->
+                                    <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                         <button @click.prevent="deleteTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                             <i class="material-icons" style="font-size: 20px;">delete_outline</i>
                                             <span>Remove Optimized</span>
                                         </button>
-                                    </template>
-                                    <template x-if="modalVideo.has_transcode">
-                                        <a :href="modalVideo.transcode_download_url"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Download optimized MP4">
-                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
-                                            <span>Optimized</span>
-                                        </a>
                                     </template>
 
                                     <template x-if="modalVideo.youtube_id">
@@ -1017,4 +1022,5 @@
         </div>
     </div>
 </body>
+
 </html>
