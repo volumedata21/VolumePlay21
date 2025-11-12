@@ -759,17 +759,15 @@ def _transcode_video_task(video_id):
             else:
                 # --- NEW: Check APP_HW_ACCEL_MODE to select encoder ---
                 if APP_HW_ACCEL_MODE == 'qsv':
-                    print(f"  - [HW-QSV] Using Intel QSV (h264_qsv) for: {video.filename}")
+                    print(f"  - [HW-VAAPI] Using VAAPI (h264_vaapi) for: {video.filename}")
                     ffmpeg_cmd = [
                         'ffmpeg',
-                        '-hwaccel', 'qsv',
-                        '-hwaccel_output_format', 'qsv', # Modern FFmpeg 7 flag
+                        '-hwaccel', 'vaapi',
+                        '-hwaccel_device', '/dev/dri/renderD128',
+                        '-hwaccel_output_format', 'vaapi',
                         '-i', input_path,
-                        '-c:v', 'h264_qsv',
-                        '-preset', 'fast',
-                        # '-look_ahead', '1',  <-- REMOVED THIS UNRECOGNIZED OPTION
-                        # Use the modern QSV Video Post-Processing filter 'vpp_qsv'
-                        '-vf', "vpp_qsv=w='min(iw,1920)':h='min(ih,1080)'", # Modern scaler
+                        '-vf', "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)'", # Use the vaapi scaler
+                        '-c:v', 'h264_vaapi',               # Use the vaapi encoder
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-movflags', '+faststart',
@@ -790,8 +788,10 @@ def _transcode_video_task(video_id):
                         '-movflags', '+faststart',
                         output_path
                     ]
+                # --- END OF NEW LOGIC ---
                 
                 print(f"  - Starting transcode: {' '.join(ffmpeg_cmd)}")
+                sys.stdout.flush()
                 subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
             
             video.transcoded_path = output_path
