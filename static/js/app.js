@@ -9,8 +9,7 @@ function videoApp() {
         isLoading: false, // For loading video pages
 
         // --- Task Status ---
-        isScanning: false, // True if any scan is running
-        scanType: 'idle', // 'idle', 'new', 'full' - NEW: To track which scan
+        scanType: 'idle', // 'idle', 'new', 'full'
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
 
@@ -30,7 +29,7 @@ function videoApp() {
         // Player state
         isAutoplayEnabled: true,
         currentPlaybackSpeed: 1.0,
-        playbackRates: [0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
+        playbackRates: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
 
         // View & Data state
         currentView: { type: 'all', id: null, author: null },
@@ -292,7 +291,12 @@ function videoApp() {
         },
 
         get libraryTaskButtonText() {
-            // Note: Scan buttons are handled separately in HTML
+            if (this.scanType === 'new') {
+                return this.scanStatus.progress > 0 ? `Scanning... ${this.scanStatus.progress}` : 'Scanning New...';
+            }
+            if (this.scanType === 'full') {
+                return this.scanStatus.progress > 0 ? `Scanning... ${this.scanStatus.progress}` : 'Scanning All...';
+            }
             if (this.isGeneratingThumbnails) {
                 return this.thumbnailStatus.total > 0 ? `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}` : 'Generating...';
             }
@@ -638,6 +642,16 @@ function videoApp() {
             player.currentTime -= (1 / 30);
         },
 
+        // --- Playback Speed Controls (THE FIX) ---
+        setPlaybackSpeed(speed) {
+            const newSpeed = parseFloat(speed);
+            if (isNaN(newSpeed)) return;
+            this.currentPlaybackSpeed = newSpeed;
+            if (this.$refs.videoPlayer) {
+                this.$refs.videoPlayer.playbackRate = newSpeed;
+            }
+        },
+
         cyclePlaybackSpeed() {
             const currentIndex = this.playbackRates.indexOf(this.currentPlaybackSpeed);
             let nextIndex = currentIndex + 1;
@@ -646,6 +660,7 @@ function videoApp() {
             }
             this.setPlaybackSpeed(this.playbackRates[nextIndex]);
         },
+        // --- END FIX ---
 
         // --- Tag Button Functions ---
         getVideoTagText(video) {
@@ -908,7 +923,7 @@ function videoApp() {
                 }
             };
             
-            // poll(); // // Run immediately
+            // poll(); // Do not poll immediately, let the UI state set first
             this.scanPollInterval = setInterval(poll, 3000);
         },
 
@@ -964,7 +979,7 @@ function videoApp() {
                 }
             };
             
-            // poll(); // // Run immediately
+            // poll(); // Do not poll immediately
             this.thumbnailPollInterval = setInterval(poll, 2000);
         },
 
@@ -985,6 +1000,7 @@ function videoApp() {
             if (!confirm('Are you sure you want to prune the library? This will permanently remove any videos from the database that are not found on disk.')) {
                 return;
             }
+            this.isCleaningUp = true; // Set state immediately
             try {
                 const response = await fetch('/api/library/cleanup', { method: 'POST' });
                 if (response.status === 202 || response.status === 409) {
@@ -992,9 +1008,11 @@ function videoApp() {
                 } else {
                     const result = await response.json();
                     console.error('Failed to start cleanup:', result.error);
+                    this.isCleaningUp = false;
                 }
             } catch (e) {
                 console.error('Error starting cleanup:', e);
+                this.isCleaningUp = false;
             }
         },
 
@@ -1022,7 +1040,7 @@ function videoApp() {
                 }
             };
             
-            //poll(); // Run immediately
+            // poll(); // Do not poll immediately
             this.cleanupPollInterval = setInterval(poll, 3000);
         },
 
@@ -1124,20 +1142,24 @@ function videoApp() {
 
         async refreshModalVideoData(videoId) {
             try {
-                const params = new URLSearchParams({ page: 1, viewType: 'all' });
-                const response = await fetch(`/api/videos?${params.toString()}`);
+                // This is a lightweight way to get just one video's fresh data
+                const response = await fetch(`/api/videos?viewType=video&viewId=${videoId}`);
                 const data = await response.json();
-                const newVideoData = data.articles.find(v => v.id === videoId);
-
-                if (newVideoData) {
+                
+                if (data.articles && data.articles.length > 0) {
+                    const newVideoData = data.articles[0];
                     this.updateVideoData(newVideoData);
                     this.modalVideo = newVideoData;
                     this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
                     this.refreshPlayerData();
                     console.log('Player source updated.');
+                } else {
+                    // Fallback to full refresh if single fetch fails
+                    this.fetchVideos(true);
                 }
             } catch (e) {
                 console.error("Failed to refresh single video data", e);
+                this.fetchVideos(true);
             }
         },
 
