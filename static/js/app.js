@@ -6,15 +6,22 @@ function videoApp() {
         // --- State Variables (Managed by this component) ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isScanning: false, // Flag for scan polling
-        isGeneratingThumbnails: false, // Flag for thumbnail polling
         isLoading: false, // For loading video pages
 
-        // Status objects for background tasks
-        thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
-        thumbnailPollInterval: null,
+        // --- Task Status ---
+        isScanning: false, // True if any scan is running
+        scanType: 'idle', // 'idle', 'new', 'full' - NEW: To track which scan
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
+
+        isGeneratingThumbnails: false,
+        thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
+        thumbnailPollInterval: null,
+        
+        isCleaningUp: false,
+        cleanupStatus: { status: 'idle', message: '', progress: 0 },
+        cleanupPollInterval: null,
+
         isTranscoding: false,
         transcodeStatus: { status: 'idle', message: '', video_id: null },
         transcodePollInterval: null,
@@ -29,81 +36,78 @@ function videoApp() {
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
         modalVideo: null,
-        currentVideoSrc: '', // Holds the URL for the player (original or transcode)
+        currentVideoSrc: '',
         searchQuery: '',
         sortOrder: 'aired_newest',
         appData: {
-            videos: [], // This will be filled by pagination
-            allVideos: [], // This is a new cache for smart playlists
+            videos: [],
+            allVideos: [], // Cache for smart playlists
             folder_tree: {},
             smartPlaylists: [],
             authorCounts: {}
         },
-        filterHistory: [], // Filter history for back button
+        filterHistory: [],
 
-        // --- NEW: Pagination State ---
+        // Pagination State
         currentPage: 1,
         totalPages: 1,
         totalItems: 0,
-        // --- END NEW ---
 
-        // --- Global Filter Settings ---
+        // Global Filter Settings
         filterSettings: {
-            shorts: 'normal', // 'normal', 'solo', 'hide'
-            vr: 'normal',     // 'normal', 'solo', 'hide'
-            optimized: 'normal' // 'normal', 'solo', 'hide'
+            shorts: 'normal',
+            vr: 'normal',
+            optimized: 'normal'
         },
 
         // --- Init ---
         init() {
-            // Initialize the currentView in the global store
             Alpine.store('globalState').currentView = this.currentView;
             Alpine.store('globalState').openFolderPaths = [];
 
-            // Load filter settings from localStorage
             const savedFilters = localStorage.getItem('filterSettings');
             if (savedFilters) {
                 this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
             }
 
-            // --- NEW: Watch all filters and trigger a new search ---
+            // Watch filters and trigger a new search
             this.$watch('searchQuery', () => this.fetchVideos(true));
             this.$watch('sortOrder', () => this.fetchVideos(true));
             this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
             this.$watch('filterSettings', () => this.fetchVideos(true), { deep: true });
-            // --- END NEW ---
 
             this.fetchMetadata(); // Load folders/playlists once
             this.fetchVideos(true); // Load first page of videos
-            this.startScanPolling(); // Check if a scan is running on load
+            
+            // Check for any running tasks on load
+            this.startScanPolling();
+            this.startThumbnailPolling();
+            this.startCleanupPolling();
 
-            // --- NEW: Refresh data on tab focus and on a timer ---
+            // Refresh data on tab focus
             window.addEventListener('focus', () => {
-                if (!this.isScanning) {
-                    this.fetchVideos(true); // 'true' = new query
+                if (!this.isAnyTaskRunning()) {
+                    this.fetchVideos(true);
                 }
             });
 
             // Refresh every hour
             setInterval(() => {
-                if (!this.isModalOpen && !this.isScanning) {
+                if (!this.isModalOpen && !this.isAnyTaskRunning()) {
                     this.fetchVideos(true);
                 }
             }, 3600000);
-            // --- END NEW ---
         },
 
-        // --- NEW: Fetch Metadata (Folders & Playlists) ---
+        // --- API Fetching ---
         async fetchMetadata() {
             try {
                 const response = await fetch('/api/metadata');
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
-
                 this.appData.folder_tree = data.folder_tree || {};
                 this.appData.smartPlaylists = data.smartPlaylists || [];
                 this.appData.authorCounts = data.author_counts || {};
-
             } catch (e) {
                 console.error('Error fetching metadata:', e);
                 this.appData.folder_tree = {};
@@ -111,52 +115,42 @@ function videoApp() {
             }
         },
 
-        // --- NEW: Main Paginated Video Fetcher ---
         async fetchVideos(isNewQuery = false) {
-            if (this.isLoading) return; // Prevent multiple requests
+            if (this.isLoading) return;
 
-            // 1. Reset state if it's a new filter/sort/view
             if (isNewQuery) {
                 this.currentPage = 1;
                 this.totalPages = 1;
                 this.appData.videos = [];
             }
 
-            // 2. Stop if we're already at the end of the list
             if (this.currentPage > this.totalPages) {
                 return;
             }
 
             this.isLoading = true;
 
-            // --- 3. EXCEPTION: Smart Playlists ---
-            // Smart playlist logic is too complex to move to the server query.
-            // For this view *only*, we load ALL videos and filter on the client.
+            // Smart Playlist Exception: Load all videos
             if (this.currentView.type === 'smart_playlist') {
                 try {
-                    // Only fetch all videos if we don't have them cached
                     if (this.appData.allVideos.length === 0) {
                         const response = await fetch('/api/videos_all');
                         if (!response.ok) throw new Error('Failed to load all videos');
                         const data = await response.json();
                         this.appData.allVideos = data.articles || [];
                     }
-                    // Client-side filtering for smart playlists will be handled
-                    // by the 'filteredVideos' getter. We don't populate appData.videos.
-                    this.appData.videos = []; // Clear main list
-                    this.totalItems = 0; // Handled by getter
-                    this.totalPages = 1; // Not paginated
+                    this.appData.videos = [];
+                    this.totalItems = 0;
+                    this.totalPages = 1;
                 } catch (e) {
                     console.error('Error fetching all videos for playlist:', e);
                 } finally {
                     this.isLoading = false;
                 }
-                return; // Stop here
+                return;
             }
-            // --- END EXCEPTION ---
 
-
-            // --- 4. Build URL for all other paginated views ---
+            // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
                 searchQuery: this.searchQuery || '',
@@ -169,17 +163,15 @@ function videoApp() {
                 filterOptimized: this.filterSettings.optimized,
             });
 
-            // --- 5. Fetch Data ---
             try {
                 const response = await fetch(`/api/videos?${params.toString()}`);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
 
-                // Append new videos to the list
                 this.appData.videos.push(...data.articles);
                 this.totalItems = data.total_items;
                 this.totalPages = data.total_pages;
-                this.currentPage++; // Increment for the *next* load
+                this.currentPage++;
             } catch (e) {
                 console.error('Error fetching videos:', e);
                 this.appData.videos = [];
@@ -190,16 +182,12 @@ function videoApp() {
         },
 
         // --- Computed Properties (Getters) ---
-
-        // OLD fullFilteredList is REMOVED.
-
-        // This getter now handles the 'smart_playlist' exception.
         get filteredVideos() {
-            // --- Smart Playlist Logic (Client-Side) ---
+            // Smart Playlist Logic (Client-Side)
             if (this.currentView.type === 'smart_playlist') {
                 const playlistId = this.currentView.id;
                 const playlist = this.appData.smartPlaylists.find(p => p.id === playlistId);
-                let videos = this.appData.allVideos; // Filter from the full cache
+                let videos = this.appData.allVideos;
 
                 if (playlist) {
                     playlist.filters.forEach(filter => {
@@ -223,7 +211,7 @@ function videoApp() {
                         }
                     });
                 }
-                // We still apply search and sort to the smart playlist
+                
                 if (this.searchQuery.trim() !== '') {
                     const query = this.searchQuery.toLowerCase();
                     videos = videos.filter(v =>
@@ -233,15 +221,13 @@ function videoApp() {
                     );
                 }
                 videos.sort((a, b) => this.sortLogic(a, b));
-                return videos; // Return the client-filtered list
+                return videos;
             }
 
-            // --- All Other Views (Server-Paginated) ---
-            // The server already filtered and sorted. Just return the list.
+            // All Other Views (Server-Paginated)
             return this.appData.videos;
         },
 
-        // Helper for sorting smart playlists
         sortLogic(a, b) {
             if (this.currentView.type === 'history') {
                 const dateA = a.last_watched ? new Date(a.last_watched) : 0;
@@ -276,13 +262,16 @@ function videoApp() {
             if (this.isLoading && this.appData.videos.length === 0) {
                 return 'Loading videos...';
             }
-            if (this.isScanning) {
+            if (this.scanType !== 'idle') {
                 if (this.scanStatus.progress > 0) {
                     return `Scanning library... (${this.scanStatus.progress} videos processed)`;
                 }
                 return 'Scanning library... (Starting)';
             }
-
+            if (this.isCleaningUp) {
+                return 'Pruning library...';
+            }
+            
             if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist') {
                 if (this.searchQuery.trim() !== '') return 'No videos match your search.';
                 if (!this.appData.videos || this.totalItems === 0) {
@@ -291,39 +280,29 @@ function videoApp() {
                 return 'No videos found for this filter.';
             }
 
-            // Smart playlist empty message
             if (this.appData.videos.length === 0 && this.currentView.type === 'smart_playlist') {
                 if (this.isLoading) return 'Loading videos for playlist...';
                 return 'No videos match this playlist\'s filters.';
             }
-
             return 'No videos found.';
         },
 
-        get thumbnailButtonText() {
-            if (!this.isGeneratingThumbnails) {
-                return 'Gen. Missing Thumbs';
-            }
-            const status = this.thumbnailStatus.status;
-            if (status === 'starting') {
-                return 'Starting...';
-            }
-            if (status === 'generating') {
-                if (this.thumbnailStatus.total === 0) {
-                    return 'Generating... (Scanning)';
-                }
-                return `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}`;
-            }
-            if (status === 'error') {
-                return 'Error (Retry?)';
-            }
-            if (status === 'idle') {
-                return 'Finishing...';
-            }
-            return 'Working...'; // Fallback
+        isAnyTaskRunning() {
+            return (this.scanType !== 'idle') || this.isGeneratingThumbnails || this.isCleaningUp;
         },
 
-        // --- Dynamic Tag Filtering Logic ---
+        get libraryTaskButtonText() {
+            // Note: Scan buttons are handled separately in HTML
+            if (this.isGeneratingThumbnails) {
+                return this.thumbnailStatus.total > 0 ? `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}` : 'Generating...';
+            }
+            if (this.isCleaningUp) {
+                return 'Pruning...';
+            }
+            // Default text
+            return 'Gen. Missing Thumbs';
+        },
+
         get currentFilterPath() {
             const viewState = Alpine.store('globalState').currentView;
             if (viewState.type !== 'folder' || this.searchQuery.trim() !== '') return null;
@@ -331,35 +310,30 @@ function videoApp() {
         },
 
         get getDynamicTags() {
-            // 1. Disable if not in a browsable view or if searching
             if (this.currentView.type !== 'all' && this.currentView.type !== 'folder') return [];
             if (this.searchQuery.trim() !== '') return [];
 
             let currentLevel = this.appData.folder_tree;
             if (!currentLevel || Object.keys(currentLevel).length === 0) {
-                return []; // Folder tree hasn't loaded or is empty
+                return [];
             }
 
-            // 2. Handle 'folder' view (we need to traverse the tree)
             if (this.currentView.type === 'folder' && this.currentView.id) {
                 const pathParts = this.currentView.id.split('/');
                 for (const part of pathParts) {
                     if (currentLevel && typeof currentLevel === 'object' && currentLevel[part]) {
                         currentLevel = currentLevel[part];
                     } else {
-                        currentLevel = null; // Path doesn't exist or is a leaf
+                        currentLevel = null;
                         break;
                     }
                 }
             }
 
-            // 3. Return the keys of the current level
-            //    (This works for 'all' view [currentLevel = root] and 'folder' view)
             if (currentLevel && typeof currentLevel === 'object') {
                 return Object.keys(currentLevel).sort();
             }
 
-            // 4. No sub-tags found
             return [];
         },
 
@@ -372,6 +346,10 @@ function videoApp() {
             const newPath = currentPath ? currentPath + '/' + tag : tag;
             if (this.isModalOpen) this.closeModal();
             this.setView('folder', newPath, null);
+        },
+
+        startDrag(tag) {
+            console.log("Dragging tag:", tag);
         },
 
         // --- Smart Playlist Actions ---
@@ -504,7 +482,6 @@ function videoApp() {
             };
             this.currentView = Alpine.store('globalState').currentView;
             this.currentTitle = lastView.title;
-            // fetchVideos() will be triggered by the $watch('currentView')
         },
 
         setView(type, id = null, author = null) {
@@ -524,7 +501,6 @@ function videoApp() {
             this.currentView = Alpine.store('globalState').currentView;
             this.updateTitle();
             this.isMobileMenuOpen = false;
-            // fetchVideos() will be triggered by the $watch('currentView')
         },
 
         updateTitle() {
@@ -549,23 +525,18 @@ function videoApp() {
             else { this.currentTitle = 'All Videos'; }
         },
 
-        // --- UPDATED: loadMoreVideos ---
         loadMoreVideos() {
-            // Only load more if it's not a smart playlist
             if (this.currentView.type !== 'smart_playlist') {
-                this.fetchVideos(false); // 'false' = append page
+                this.fetchVideos(false);
             }
         },
 
         async openModal(video) {
-            // If another video is already in PiP, exit that mode first
             if (document.pictureInPictureElement) {
                 await document.exitPictureInPicture();
             }
-
             this.modalVideo = video;
             this.isModalOpen = true;
-
             this.currentVideoSrc = video.has_transcode ? video.transcode_url : video.video_url;
             this.checkTranscodeStatus(video.id);
 
@@ -591,7 +562,6 @@ function videoApp() {
         },
 
         closeModal() {
-            // Only stop the video if we are NOT in Picture-in-Picture mode.
             if (!document.pictureInPictureElement) {
                 this.stopAndSaveVideo();
                 this.modalVideo = null;
@@ -600,14 +570,11 @@ function videoApp() {
         },
 
         handleEnterPiP() {
-            // This is the main action: Hide the modal when PiP starts
             console.log("Entering PiP, hiding modal.");
             this.isModalOpen = false;
         },
 
         handleLeavePiP() {
-            // This runs when the user closes the PiP window.
-            // We clean up the video completely.
             console.log("Leaving PiP, stopping and clearing video.");
             this.stopAndSaveVideo();
             this.modalVideo = null;
@@ -636,7 +603,6 @@ function videoApp() {
         playNextVideo() {
             if (!this.modalVideo) return;
             const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
-
             if (currentIndex !== -1 && currentIndex + 1 < this.filteredVideos.length) {
                 const nextVideo = this.filteredVideos[currentIndex + 1];
                 this.stopAndSaveVideo();
@@ -649,7 +615,6 @@ function videoApp() {
         playPreviousVideo() {
             if (!this.modalVideo) return;
             const currentIndex = this.filteredVideos.findIndex(v => v.id === this.modalVideo.id);
-
             if (currentIndex > 0) {
                 const prevVideo = this.filteredVideos[currentIndex - 1];
                 this.stopAndSaveVideo();
@@ -673,16 +638,6 @@ function videoApp() {
             player.currentTime -= (1 / 30);
         },
 
-        // --- Playback Speed Controls ---
-        setPlaybackSpeed(speed) {
-            const newSpeed = parseFloat(speed);
-            if (isNaN(newSpeed)) return;
-            this.currentPlaybackSpeed = newSpeed;
-            if (this.$refs.videoPlayer) {
-                this.$refs.videoPlayer.playbackRate = newSpeed;
-            }
-        },
-
         cyclePlaybackSpeed() {
             const currentIndex = this.playbackRates.indexOf(this.currentPlaybackSpeed);
             let nextIndex = currentIndex + 1;
@@ -694,29 +649,17 @@ function videoApp() {
 
         // --- Tag Button Functions ---
         getVideoTagText(video) {
-            if (video.is_short) {
-                return 'Tag: Short';
-            }
-            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') {
-                return 'Tag: VR180';
-            }
-            if (video.video_type === 'VR360') {
-                return 'Tag: VR360';
-            }
+            if (video.is_short) return 'Tag: Short';
+            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') return 'Tag: VR180';
+            if (video.video_type === 'VR360') return 'Tag: VR360';
             return 'Set Tag';
         },
 
         getVideoTagIcon(video) {
-            if (video.is_short) {
-                return 'phone_android'; // Icon for Shorts
-            }
-            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') {
-                return 'view_in_ar'; // Icon for VR180
-            }
-            if (video.video_type === 'VR360') {
-                return 'vrpano'; // Icon for VR360
-            }
-            return 'label'; // <-- CHANGED from label_off
+            if (video.is_short) return 'phone_android';
+            if (video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB') return 'view_in_ar';
+            if (video.video_type === 'VR360') return 'vrpano';
+            return 'label';
         },
 
         cycleVideoTag(video) {
@@ -729,12 +672,7 @@ function videoApp() {
                 currentTag = 'vr360';
             }
 
-            const cycle = {
-                'none': 'short',
-                'short': 'vr180',
-                'vr180': 'vr360',
-                'vr360': 'none',
-            };
+            const cycle = { 'none': 'short', 'short': 'vr180', 'vr180': 'vr360', 'vr360': 'none' };
             const nextTag = cycle[currentTag] || 'none';
 
             fetch(`/api/video/${video.id}/set_tag`, {
@@ -742,29 +680,24 @@ function videoApp() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tag: nextTag })
             })
-                .then(res => {
-                    if (!res.ok) throw new Error('Failed to update tag');
-                    return res.json();
-                })
-                .then(updatedVideo => {
-                    // Update the video in the modal
-                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
-                    // Update the video in the main list
-                    this.updateVideoData(updatedVideo);
-                })
-                .catch(err => {
-                    console.error('Failed to update video tag:', err);
-                });
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to update tag');
+                return res.json();
+            })
+            .then(updatedVideo => {
+                this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+                this.updateVideoData(updatedVideo);
+            })
+            .catch(err => {
+                console.error('Failed to update video tag:', err);
+            });
         },
 
         // --- Content Rendering ---
         getAuthorVideoCount(author) {
             const authorName = author || 'Unknown Show';
             const count = this.appData.authorCounts[authorName] || 0;
-
-            if (count === 1) {
-                return '1 Video';
-            }
+            if (count === 1) return '1 Video';
             return `${count} Videos`;
         },
 
@@ -777,7 +710,6 @@ function videoApp() {
         formatVideoDescription(text) {
             if (!text) return 'No summary available.';
             let cleanText = this.unescapeHTML(text);
-
             const urlRegex = /(\b(https?|ftp):\/\/[-A-Z0-9+&@#\/%?=~_|!:,.;]*[-A-Z0-9+&@#\/%=~_|])/ig;
             const atRegex = /@([\w\d_.-]+)/g;
             const hashRegex = /#([\w\d_.-]+)/g;
@@ -810,21 +742,12 @@ function videoApp() {
                 return new Date(publishedDateISO || uploadedDateISO).toLocaleDateString();
             }
             const seconds = Math.round((now - dateToCompare) / 1E3);
-            const intervals = {
-                year: 31536000,
-                month: 2592000,
-                week: 604800,
-                day: 86400,
-                hour: 3600,
-                minute: 60
-            };
+            const intervals = { year: 31536000, month: 2592000, week: 604800, day: 86400, hour: 3600, minute: 60 };
             if (seconds < 60) return 'just now';
             let counter;
             for (const unit in intervals) {
                 counter = Math.floor(seconds / intervals[unit]);
-                if (counter > 0) {
-                    return `${counter} ${unit}${counter !== 1 ? 's' : ''} ago`;
-                }
+                if (counter > 0) return `${counter} ${unit}${counter !== 1 ? 's' : ''} ago`;
             }
             return 'just now';
         },
@@ -838,17 +761,13 @@ function videoApp() {
         },
 
         formatDuration(totalSeconds) {
-            if (!totalSeconds || totalSeconds < 1) {
-                return '0:00';
-            }
+            if (!totalSeconds || totalSeconds < 1) return '0:00';
             totalSeconds = Math.round(totalSeconds);
             const hours = Math.floor(totalSeconds / 3600);
             const minutes = Math.floor((totalSeconds % 3600) / 60);
             const seconds = totalSeconds % 60;
             const pad = (num) => num.toString().padStart(2, '0');
-            if (hours > 0) {
-                return `${hours}:${pad(minutes)}:${pad(seconds)}`;
-            }
+            if (hours > 0) return `${hours}:${pad(minutes)}:${pad(seconds)}`;
             return `${minutes}:${pad(seconds)}`;
         },
 
@@ -912,42 +831,85 @@ function videoApp() {
         },
 
         // --- Background Task Handlers ---
-        async scanVideoLibrary() {
-            if (this.isScanning) return;
+        async scanNewVideos() {
+            if (this.isAnyTaskRunning()) return;
+            this.scanType = 'new';
             try {
-                const response = await fetch('/api/scan_videos', { method: 'POST' });
+                const response = await fetch('/api/scan_videos', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_scan: false })
+                });
                 if (response.status === 202 || response.status === 409) {
                     this.startScanPolling();
                 } else {
                     const result = await response.json();
                     console.error('Failed to start scan:', result.error);
+                    this.scanType = 'idle';
                 }
             } catch (e) {
                 console.error('Error starting scan:', e);
+                this.scanType = 'idle';
+            }
+        },
+
+        async scanFullLibrary() {
+            if (this.isAnyTaskRunning()) return;
+            if (!confirm('A full scan will check every file in your library and can take a long time. Continue?')) {
+                return;
+            }
+            this.scanType = 'full';
+            try {
+                const response = await fetch('/api/scan_videos', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ full_scan: true })
+                });
+                if (response.status === 202 || response.status === 409) {
+                    this.startScanPolling();
+                } else {
+                    const result = await response.json();
+                    console.error('Failed to start scan:', result.error);
+                    this.scanType = 'idle';
+                }
+            } catch (e) {
+                console.error('Error starting scan:', e);
+                this.scanType = 'idle';
             }
         },
 
         startScanPolling() {
-            if (this.scanPollInterval) {
-                clearInterval(this.scanPollInterval);
-            }
-            this.isScanning = true;
-            this.scanPollInterval = setInterval(async () => {
+            if (this.scanPollInterval) clearInterval(this.scanPollInterval);
+            
+            const poll = async () => {
                 try {
                     const response = await fetch('/api/scan/status');
                     if (!response.ok) throw new Error('Scan status poll failed');
                     const data = await response.json();
                     this.scanStatus = data;
 
-                    if (data.status === 'idle' || data.status === 'error') {
-                        this.stopScanPolling(data.status === 'idle');
+                    if (data.status === 'idle') {
+                        this.stopScanPolling(true);
+                    } else if (data.status === 'error') {
+                        this.stopScanPolling(false);
+                    } else {
+                        // Task is running. Figure out which one.
+                        this.isScanning = true;
+                        if (data.message.includes('Full')) {
+                            this.scanType = 'full';
+                        } else {
+                            this.scanType = 'new';
+                        }
                     }
                 } catch (e) {
                     console.error(e);
                     this.scanStatus = { status: 'error', message: e.message };
                     this.stopScanPolling(false);
                 }
-            }, 3000);
+            };
+            
+            // poll(); // // Run immediately
+            this.scanPollInterval = setInterval(poll, 3000);
         },
 
         stopScanPolling(wasSuccessful) {
@@ -956,33 +918,54 @@ function videoApp() {
                 this.scanPollInterval = null;
             }
             this.isScanning = false;
+            this.scanType = 'idle';
             if (wasSuccessful) {
                 console.log('Video scan complete, fetching new data.');
-                this.fetchMetadata(); // Re-fetch folders
-                this.fetchVideos(true); // Re-fetch videos
+                this.fetchMetadata();
+                this.fetchVideos(true);
+            }
+        },
+
+        async generateMissingThumbnails() {
+            if (this.isAnyTaskRunning()) return;
+            try {
+                const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
+                if (response.status === 200 || response.status === 202) {
+                    this.startThumbnailPolling();
+                } else {
+                    const result = await response.json();
+                    console.error('Failed to start thumbnail generation:', result.error);
+                }
+            } catch (e) {
+                console.error('Error starting thumbnail generation:', e);
             }
         },
 
         startThumbnailPolling() {
-            if (this.thumbnailPollInterval) {
-                clearInterval(this.thumbnailPollInterval);
-            }
-            this.isGeneratingThumbnails = true;
-            this.thumbnailPollInterval = setInterval(async () => {
+            if (this.thumbnailPollInterval) clearInterval(this.thumbnailPollInterval);
+
+            const poll = async () => {
                 try {
                     const response = await fetch('/api/thumbnails/status');
                     if (!response.ok) throw new Error('Status poll failed');
                     const data = await response.json();
                     this.thumbnailStatus = data;
-                    if (data.status === 'idle' || data.status === 'error') {
-                        this.stopThumbnailPolling(data.status === 'idle');
+                    if (data.status === 'idle') {
+                        this.stopThumbnailPolling(true);
+                    } else if (data.status === 'error') {
+                        this.stopThumbnailPolling(false);
+                    } else {
+                        this.isGeneratingThumbnails = true;
                     }
                 } catch (e) {
                     console.error(e);
                     this.thumbnailStatus.status = 'error';
                     this.stopThumbnailPolling(false);
                 }
-            }, 2000);
+            };
+            
+            // poll(); // // Run immediately
+            this.thumbnailPollInterval = setInterval(poll, 2000);
         },
 
         stopThumbnailPolling(wasSuccessful) {
@@ -997,21 +980,62 @@ function videoApp() {
             }
         },
 
-        async generateMissingThumbnails() {
-            if (this.isGeneratingThumbnails) return;
-            this.isGeneratingThumbnails = true;
+        async cleanupLibrary() {
+            if (this.isAnyTaskRunning()) return;
+            if (!confirm('Are you sure you want to prune the library? This will permanently remove any videos from the database that are not found on disk.')) {
+                return;
+            }
             try {
-                const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
-                if (response.status === 200 || response.status === 202) {
-                    this.startThumbnailPolling();
+                const response = await fetch('/api/library/cleanup', { method: 'POST' });
+                if (response.status === 202 || response.status === 409) {
+                    this.startCleanupPolling();
                 } else {
                     const result = await response.json();
-                    console.error('Failed to start thumbnail generation:', result.error);
-                    this.isGeneratingThumbnails = false;
+                    console.error('Failed to start cleanup:', result.error);
                 }
             } catch (e) {
-                console.error('Error starting thumbnail generation:', e);
-                this.isGeneratingThumbnails = false;
+                console.error('Error starting cleanup:', e);
+            }
+        },
+
+        startCleanupPolling() {
+            if (this.cleanupPollInterval) clearInterval(this.cleanupPollInterval);
+            
+            const poll = async () => {
+                try {
+                    const response = await fetch('/api/library/cleanup/status');
+                    if (!response.ok) throw new Error('Cleanup status poll failed');
+                    const data = await response.json();
+                    this.cleanupStatus = data;
+
+                    if (data.status === 'idle') {
+                        this.stopCleanupPolling(true);
+                    } else if (data.status === 'error') {
+                        this.stopCleanupPolling(false);
+                    } else {
+                        this.isCleaningUp = true;
+                    }
+                } catch (e) {
+                    console.error(e);
+                    this.cleanupStatus = { status: 'error', message: e.message };
+                    this.stopCleanupPolling(false);
+                }
+            };
+            
+            //poll(); // Run immediately
+            this.cleanupPollInterval = setInterval(poll, 3000);
+        },
+
+        stopCleanupPolling(wasSuccessful) {
+            if (this.cleanupPollInterval) {
+                clearInterval(this.cleanupPollInterval);
+                this.cleanupPollInterval = null;
+            }
+            this.isCleaningUp = false;
+            if (wasSuccessful) {
+                console.log('Library cleanup complete, fetching new data.');
+                this.fetchMetadata();
+                this.fetchVideos(true);
             }
         },
 
@@ -1099,19 +1123,15 @@ function videoApp() {
         },
 
         async refreshModalVideoData(videoId) {
-            // Re-fetch just this one video's data from the server
-            // This is more efficient than fetching all videos again
             try {
-                // We re-use the /api/videos endpoint to get one video
                 const params = new URLSearchParams({ page: 1, viewType: 'all' });
                 const response = await fetch(`/api/videos?${params.toString()}`);
                 const data = await response.json();
-
                 const newVideoData = data.articles.find(v => v.id === videoId);
 
                 if (newVideoData) {
-                    this.updateVideoData(newVideoData); // Update it in the list
-                    this.modalVideo = newVideoData; // Update it in the modal
+                    this.updateVideoData(newVideoData);
+                    this.modalVideo = newVideoData;
                     this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
                     this.refreshPlayerData();
                     console.log('Player source updated.');
@@ -1131,17 +1151,14 @@ function videoApp() {
         },
 
         updateVideoData(updatedVideo) {
-            // Helper to update the video in the main list
             let index = this.appData.videos.findIndex(v => v.id === updatedVideo.id);
             if (index !== -1) {
                 this.appData.videos[index] = updatedVideo;
             }
-            // Also update the smart playlist cache
             index = this.appData.allVideos.findIndex(v => v.id === updatedVideo.id);
             if (index !== -1) {
                 this.appData.allVideos[index] = updatedVideo;
             }
-            // Update modal video if it's the one being changed
             if (this.modalVideo && this.modalVideo.id === updatedVideo.id) {
                 this.modalVideo = updatedVideo;
             }
@@ -1263,12 +1280,10 @@ function filterEditor(playlistId, appData) {
         },
 
         get allAuthors() {
-            // This now filters from the 'allVideos' cache
             const videos = appData.allVideos || [];
             const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
             return Array.from(authors).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
         },
-        
         resetValues() {
             this.textValue = '';
             this.selectedAuthors = [];

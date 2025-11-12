@@ -1,11 +1,11 @@
 ## --- Imports ---
 import os
 import datetime
-import xml.etree.ElementTree as ET # For parsing NFO files
-import json # For handling playlist filters
-import threading # For background tasks
-import subprocess # For running ffmpeg
-import sys # To flush print statements
+import xml.etree.ElementTree as ET
+import json
+import threading
+import subprocess
+import sys
 from flask import Flask, render_template, request, jsonify, send_from_directory, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.sql import func, or_, and_
@@ -14,29 +14,22 @@ import hashlib
 
 ## --- App Setup ---
 basedir = os.path.abspath(os.path.dirname(__file__))
-# Use DATA_DIR env var for persistent storage, default to app directory
 data_dir = os.environ.get('DATA_DIR', basedir)
 db_path = os.path.join(data_dir, "app.db")
-
-# VIDEO_DIR will be our new env var for the video library (e.g., /videos)
-video_dir_env = os.environ.get('VIDEO_DIR', os.path.join(basedir, "videos")) 
-# Normalize the video_dir path for consistent relative path calculation
+video_dir_env = os.environ.get('VIDEO_DIR', os.path.join(basedir, "videos"))
 video_dir = os.path.normpath(video_dir_env)
 
-# Ensure the video directory exists (for default)
 if not os.path.exists(video_dir):
     os.makedirs(video_dir, exist_ok=True)
     print(f"Created default video directory at: {video_dir}")
 print(f"Using video directory: {video_dir}")
-
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# --- Check for Hardware Acceleration ---
-# Read the environment variable to determine transcode mode
+## --- Hardware Acceleration Check ---
 APP_HW_ACCEL_MODE = os.environ.get('HW_ACCEL_TYPE', 'none').lower()
 if APP_HW_ACCEL_MODE == 'qsv':
     print("***********************************************************")
@@ -48,44 +41,29 @@ else:
     print("*** [INFO] Hardware acceleration: DISABLED (CPU/libx264)  ***")
     print("***********************************************************")
 sys.stdout.flush()
-# --- End Hardware Acceleration Check ---
 
-# --- Global Locks and Status Dictionaries for Background Tasks ---
+## --- Global Locks & Status ---
 thumbnail_generation_lock = threading.Lock()
-THUMBNAIL_STATUS = {
-    "status": "idle", # idle, starting, generating, error
-    "message": "",
-    "progress": 0,
-    "total": 0
-}
+THUMBNAIL_STATUS = {"status": "idle", "message": "", "progress": 0, "total": 0}
 
 SCAN_LOCK = threading.Lock()
-SCAN_STATUS = {
-    "status": "idle", # idle, scanning, error
-    "message": "",
-    "progress": 0
-}
+SCAN_STATUS = {"status": "idle", "message": "", "progress": 0}
 
 TRANSCODE_LOCK = threading.Lock()
-TRANSCODE_STATUS = {
-    "status": "idle", # idle, transcoding, error
-    "message": "",
-    "video_id": None
-}
+TRANSCODE_STATUS = {"status": "idle", "message": "", "video_id": None}
+
+CLEANUP_LOCK = threading.Lock()
+CLEANUP_STATUS = {"status": "idle", "message": "", "progress": 0}
+
 
 ## --- Database Models ---
-
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(300), nullable=False)
     show_title = db.Column(db.String(200))
     summary = db.Column(db.Text)
     video_path = db.Column(db.String(1000), unique=True, nullable=False)
-    
-    # --- NEW COLUMN FOR PERFORMANCE ---
-    relative_path = db.Column(db.String(1000), index=True, nullable=True) 
-    # --- END NEW COLUMN ---
-
+    relative_path = db.Column(db.String(1000), index=True, nullable=True)
     thumbnail_path = db.Column(db.String(1000))
     show_poster_path = db.Column(db.String(1000), nullable=True)
     custom_thumbnail_path = db.Column(db.String(1000), nullable=True)
@@ -100,7 +78,7 @@ class Video(db.Model):
     last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
     watched_duration = db.Column(db.Integer, default=0)
 
-    # --- Technical Info ---
+    # Technical Info
     filename = db.Column(db.String(500), nullable=True)
     file_size = db.Column(db.BigInteger, nullable=True)
     file_format = db.Column(db.String(10), nullable=True)
@@ -110,12 +88,10 @@ class Video(db.Model):
     duration = db.Column(db.Integer, default=0)
     video_codec = db.Column(db.String(50), nullable=True)
     transcoded_path = db.Column(db.String(1000), nullable=True)
-    video_type = db.Column(db.String(50), nullable=True) # e.g., "VR180_SBS", "VR180_TB", "VR360"
+    video_type = db.Column(db.String(50), nullable=True)
 
     def to_dict(self):
-        """
-        Serializes the Video object to a dictionary for the frontend API.
-        """
+        """Serializes the Video object to a dictionary for the frontend API."""
         has_custom_thumb = bool(self.custom_thumbnail_path and os.path.exists(self.custom_thumbnail_path))
         has_auto_thumb = bool(self.thumbnail_path and os.path.exists(self.thumbnail_path))
         
@@ -140,7 +116,6 @@ class Video(db.Model):
             'uploaded': self.uploaded_date.isoformat() if self.uploaded_date else datetime.datetime.now().isoformat(),
             'is_favorite': self.is_favorite,
             'is_read_later': self.is_watch_later,
-            
             'video_url': f'/api/video/{self.id}',
             'image_url': image_url_to_use,
             'show_poster_url': f'/api/show_poster/{self.id}' if self.show_poster_path else None,
@@ -148,17 +123,12 @@ class Video(db.Model):
             'subtitle_label': self.subtitle_label or 'Subtitles',
             'subtitle_lang': self.subtitle_lang or 'en',
             'youtube_id': self.youtube_id,
-            
             'feed_title': self.show_title or 'Local Media',
             'feed_id': self.id, 
             'link': f'/api/video/{self.id}',
-            
-            # Use the new pre-calculated relative_path
             'relative_path': self.relative_path or '.',
-            
             'last_watched': self.last_watched.isoformat() if self.last_watched else None,
             'watched_duration': self.watched_duration,
-
             'filename': self.filename,
             'file_size': self.file_size,
             'file_format': self.file_format.upper() if self.file_format else 'Unknown',
@@ -176,7 +146,6 @@ class Video(db.Model):
             'video_type': self.video_type
         }
 
-# SmartPlaylist Model
 class SmartPlaylist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
@@ -191,33 +160,88 @@ class SmartPlaylist(db.Model):
             'filters': json.loads(self.filters) if self.filters else [], 
         }
 
-# --- Create tables *before* app context, ensuring they exist before requests. ---
 with app.app_context():
     db.create_all()
 
 
-## --- Helper Functions ---
+## --- Library Pruning Helper ---
+def _prune_missing_videos(found_video_paths):
+    """
+    Compares a set of found video paths against the DB and deletes entries
+    that are no longer found. Also cleans up associated thumbnails/transcodes.
+    Returns the number of deleted videos.
+    """
+    deleted_count = 0
+    try:
+        all_db_videos = Video.query.with_entities(Video.id, Video.video_path, Video.thumbnail_path, Video.custom_thumbnail_path, Video.transcoded_path).all()
+        db_video_map = {v.video_path: v for v in all_db_videos}
+        paths_to_delete = set(db_video_map.keys()) - found_video_paths
+        
+        if not paths_to_delete:
+            print("  - Prune: No videos to delete.")
+            return 0
 
-def _scan_videos_task():
+        print(f"  - Prune: Found {len(paths_to_delete)} videos to delete...")
+        for path in paths_to_delete:
+            video_data = db_video_map[path]
+            
+            # Delete associated files first
+            try:
+                if video_data.transcoded_path and os.path.exists(video_data.transcoded_path):
+                    os.remove(video_data.transcoded_path)
+                    print(f"    - Deleted transcoded file: {video_data.transcoded_path}")
+            except Exception as e:
+                print(f"    - Error deleting transcoded file {video_data.transcoded_path}: {e}")
+            
+            try:
+                if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
+                    os.remove(video_data.thumbnail_path)
+                    print(f"    - Deleted thumbnail: {video_data.thumbnail_path}")
+            except OSError as e:
+                print(f"    - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
+            
+            try:
+                if video_data.custom_thumbnail_path and os.path.exists(video_data.custom_thumbnail_path):
+                    os.remove(video_data.custom_thumbnail_path)
+                    print(f"    - Deleted custom thumbnail: {video_data.custom_thumbnail_path}")
+            except OSError as e:
+                print(f"    - Error deleting custom thumbnail {video_data.custom_thumbnail_path}: {e}")
+            
+            # Delete from DB
+            db.session.query(Video).filter(Video.id == video_data.id).delete()
+            print(f"    - Deleted video record: {video_data.video_path}")
+            deleted_count += 1
+            
+        if deleted_count > 0:
+            db.session.commit()
+        print(f"  - Prune: Finished. Deleted {deleted_count} videos.")
+
+    except Exception as e:
+        print(f"  - Error during prune: {e}")
+        db.session.rollback()
+    
+    return deleted_count
+
+
+## --- Background Task Functions ---
+def _scan_videos_task(full_scan=False):
     """
     Scans the VIDEO_DIR for video files in a background thread.
-    Finds metadata, NFOs, subs, and thumbnails.
-    Prunes videos from the DB that are no longer found on disk.
+    If full_scan=False (default), only adds new videos.
+    If full_scan=True, updates all videos and prunes deleted ones.
     """
     global SCAN_STATUS
     try:
         with app.app_context():
             SCAN_STATUS = {"status": "scanning", "message": "Starting library scan...", "progress": 0}
-            print(f"Starting scan of: {video_dir}")
+            print(f"Starting scan of: {video_dir} (Full Scan: {full_scan})")
             added_count = 0
             updated_count = 0
-            deleted_count = 0
             
             found_video_paths = set()
             video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
             image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
 
-            # --- 1. Walk the directory ---
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
@@ -235,7 +259,6 @@ def _scan_videos_task():
                     if file_ext not in video_extensions:
                         continue
 
-                    # --- 2. Gather File Info & Path ---
                     video_file_path = os.path.normpath(os.path.join(dirpath, filename))
                     found_video_paths.add(video_file_path)
 
@@ -250,24 +273,21 @@ def _scan_videos_task():
                         print(f"  - Skipping {filename} (OS Error): {e}")
                         continue 
 
-                    # --- UPDATED: Calculate relative_path for DB ---
                     relative_dir = None
                     try:
                         norm_base_dir = os.path.normpath(video_dir)
                         relative_dir = os.path.relpath(os.path.dirname(video_file_path), norm_base_dir)
                         relative_dir = relative_dir.replace(os.sep, '/')
                         if relative_dir == '.':
-                            relative_dir = None # Store as NULL
+                            relative_dir = None 
                     except (ValueError, TypeError) as e:
                         print(f"  - Error calculating rel_path for {video_file_path}: {e}")
                         relative_dir = None
-                    # --- END UPDATE ---
 
                     file_format_str = file_ext.replace('.', '')
                     nfo_path = os.path.normpath(os.path.join(dirpath, video_base_filename + '.nfo'))
                     has_nfo_file = os.path.exists(nfo_path)
 
-                    # --- 3. Run ffprobe to get Technical Metadata ---
                     is_short = False
                     effective_width = 0
                     effective_height = 0
@@ -314,8 +334,6 @@ def _scan_videos_task():
                             if effective_height > effective_width:
                                 is_short = True
                             
-                            print(f"  - ffprobe OK: {filename} | Coded: {coded_width}x{coded_height} | Rotation: {rotation} | Effective: {effective_width}x{effective_height} | is_short: {is_short}")
-                            sys.stdout.flush()
                         else:
                             print(f"  - ffprobe WARN: No streams found for {filename}.")
                             sys.stdout.flush()
@@ -330,7 +348,6 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Warning: Could not determine aspect ratio for {filename}: {e}")
 
-                    # --- 4. Find Subtitles ---
                     srt_path = None
                     srt_label = None
                     srt_lang = None
@@ -354,7 +371,6 @@ def _scan_videos_task():
                         srt_lang = best_track['lang'].split('.')[0]
                         srt_label = "English" if srt_lang == "en" else srt_lang.capitalize()
 
-                    # --- 5. Find Thumbnail (Local first, then Generated) ---
                     thumbnail_file_path = None
                     for img_ext in image_extensions:
                         potential_thumb = os.path.normpath(os.path.join(dirpath, video_base_filename + img_ext))
@@ -378,7 +394,6 @@ def _scan_videos_task():
                         except Exception as e:
                             print(f"  - Error checking for generated thumb: {e}")
 
-                    # --- 6. Find Show Poster (poster.jpg) ---
                     poster_path_to_save = None
                     current_search_dir = os.path.dirname(video_file_path)
                     try:
@@ -395,7 +410,6 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Error searching for poster.jpg: {e}")
 
-                    # --- 7. Find Existing Transcode ---
                     transcoded_file_path = None
                     try:
                         potential_transcode = get_transcoded_path_for_video(video_file_path)
@@ -404,7 +418,6 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Error checking for transcoded file: {e}")
 
-                    # --- 8. Find Existing Custom Thumbnail ---
                     custom_thumb_file_path = None
                     try:
                         potential_custom_thumb = get_custom_thumbnail_path(video_file_path)
@@ -413,7 +426,6 @@ def _scan_videos_task():
                     except Exception as e:
                         print(f"  - Error checking for custom thumb: {e}")
 
-                    # --- 9. Parse NFO ---
                     title = None
                     show_title = None
                     plot = None
@@ -438,16 +450,17 @@ def _scan_videos_task():
                     
                     if not title: title = video_base_filename.replace('.', ' ')
                     if not show_title:
-                        # Use the pre-calculated relative_dir to determine show_title
                         show_title = "Unknown Show" if not relative_dir else os.path.basename(relative_dir) 
                     if not aired_date: aired_date = uploaded_date 
                     if not plot: plot = ""
 
-                    # --- 10. Database Update ---
                     try:
                         existing_video = Video.query.filter_by(video_path=video_file_path).first()
                         
                         if existing_video:
+                            if not full_scan:
+                                continue # Quick scan: skip files we already know
+                            
                             existing_video.title = title
                             existing_video.show_title = show_title
                             existing_video.summary = plot
@@ -470,8 +483,7 @@ def _scan_videos_task():
                             existing_video.duration = duration_sec
                             existing_video.video_codec = video_codec
                             existing_video.transcoded_path = transcoded_file_path
-                            existing_video.relative_path = relative_dir # --- SAVE NEW COLUMN ---
-                            # We don't update video_type, as it's manually set
+                            existing_video.relative_path = relative_dir
                             updated_count += 1
                         else:
                             new_video = Video(
@@ -482,7 +494,7 @@ def _scan_videos_task():
                                 uploaded_date=uploaded_date, 
                                 youtube_id=youtube_id,
                                 video_path=video_file_path,
-                                relative_path=relative_dir, # --- SAVE NEW COLUMN ---
+                                relative_path=relative_dir,
                                 thumbnail_path=thumbnail_file_path,
                                 show_poster_path=poster_path_to_save,
                                 custom_thumbnail_path=custom_thumb_file_path,
@@ -498,7 +510,7 @@ def _scan_videos_task():
                                 duration=duration_sec,
                                 video_codec=video_codec,
                                 transcoded_path=transcoded_file_path,
-                                video_type=None # Always defaults to None
+                                video_type=None
                             )
                             db.session.add(new_video)
                             added_count += 1
@@ -506,7 +518,6 @@ def _scan_videos_task():
                         print(f"  - DB Error processing {video_file_path}: {e}")
                         db.session.rollback()
 
-                    # --- 11. Commit in Batches ---
                     current_progress = added_count + updated_count
                     if current_progress > 0 and current_progress % 50 == 0:
                         print(f"  - Committing batch of 50 to database...")
@@ -515,63 +526,18 @@ def _scan_videos_task():
                         sys.stdout.flush()
                         db.session.commit()
 
-            # --- 12. Final Commit ---
             if added_count > 0 or updated_count > 0:
                 db.session.commit()
             print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
             
-            # --- 13. Pruning Logic ---
-            print("Starting prune of missing videos...")
-            SCAN_STATUS['message'] = "Pruning deleted videos..."
             deleted_count = 0
-            try:
-                all_db_videos = Video.query.with_entities(Video.id, Video.video_path, Video.thumbnail_path, Video.custom_thumbnail_path).all()
-                db_video_map = {v.video_path: v for v in all_db_videos}
-                paths_to_delete = set(db_video_map.keys()) - found_video_paths
-                
-                if not paths_to_delete:
-                    print("Prune finished. No videos to delete.")
-                else:
-                    print(f"Found {len(paths_to_delete)} videos to delete...")
-                    for path in paths_to_delete:
-                        video_data = db_video_map[path]
-                        
-                        try:
-                            transcoded_path = get_transcoded_path_for_video(video_data.video_path)
-                            if os.path.exists(transcoded_path):
-                                os.remove(transcoded_path)
-                                print(f"  - Deleted transcoded file: {transcoded_path}")
-                        except Exception as e:
-                            print(f"  - Error deleting transcoded file {transcoded_path}: {e}")
-                        
-                        if video_data.thumbnail_path and os.path.exists(video_data.thumbnail_path):
-                            try:
-                                os.remove(video_data.thumbnail_path)
-                                print(f"  - Deleted thumbnail: {video_data.thumbnail_path}")
-                            except OSError as e:
-                                print(f"  - Error deleting thumbnail {video_data.thumbnail_path}: {e}")
-                        
-                        if video_data.custom_thumbnail_path and os.path.exists(video_data.custom_thumbnail_path):
-                            try:
-                                os.remove(video_data.custom_thumbnail_path)
-                                print(f"  - Deleted custom thumbnail: {video_data.custom_thumbnail_path}")
-                            except OSError as e:
-                                print(f"  - Error deleting custom thumbnail {video_data.custom_thumbnail_path}: {e}")
-                        
-                        db.session.query(Video).filter(Video.id == video_data.id).delete()
-                        print(f"  - Deleted video record: {video_data.video_path}")
-                        deleted_count += 1
-                        
-                    if deleted_count > 0:
-                        db.session.commit()
-                    print(f"Prune finished. Deleted {deleted_count} videos.")
-
-            except Exception as e:
-                print(f"  - Error during prune: {e}")
-                db.session.rollback()
+            if full_scan:
+                print("Starting prune of missing videos...")
+                SCAN_STATUS['message'] = "Pruning deleted videos..."
+                deleted_count = _prune_missing_videos(found_video_paths)
             
             total_processed = added_count + updated_count + deleted_count
-            print(f"Scan finished. Processed {total_processed} videos.")
+            print(f"Scan finished. Processed {total_processed} videos. Deleted {deleted_count}.")
             SCAN_STATUS = {"status": "idle", "message": "Scan complete.", "progress": 0}
 
     except Exception as e:
@@ -584,10 +550,57 @@ def _scan_videos_task():
         sys.stdout.flush()
 
 
+def _cleanup_library_task():
+    """
+    Scans the library for deleted videos *only* and prunes them.
+    This is much faster than a full scan.
+    """
+    global CLEANUP_STATUS
+    try:
+        with app.app_context():
+            CLEANUP_STATUS = {"status": "cleaning", "message": "Finding all video files...", "progress": 0}
+            print("Starting library cleanup task...")
+            
+            found_video_paths = set()
+            video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
+            
+            # Walk the directory to find all existing video files
+            for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
+                dirnames[:] = [d for d in dirnames if not d.startswith('.')]
+                if 'vd21_hide' in filenames:
+                    dirnames[:] = []
+                    continue
+
+                for filename in filenames:
+                    if filename.startswith('.'):
+                        continue
+                    if os.path.splitext(filename)[1].lower() in video_extensions:
+                        video_file_path = os.path.normpath(os.path.join(dirpath, filename))
+                        found_video_paths.add(video_file_path)
+
+            print(f"  - Cleanup: Found {len(found_video_paths)} video files on disk.")
+            
+            # Prune any videos in the DB that were not found
+            CLEANUP_STATUS['message'] = "Pruning deleted videos..."
+            deleted_count = _prune_missing_videos(found_video_paths)
+
+            print(f"Cleanup finished. Pruned {deleted_count} videos.")
+            CLEANUP_STATUS = {"status": "idle", "message": f"Cleanup complete. Removed {deleted_count} videos.", "progress": 0}
+
+    except Exception as e:
+        print(f"  - Error during cleanup task: {e}")
+        db.session.rollback()
+        CLEANUP_STATUS = {"status": "error", "message": str(e), "progress": 0}
+    finally:
+        CLEANUP_LOCK.release()
+        print("Cleanup lock released.")
+        sys.stdout.flush()
+
+
 def build_folder_tree(paths):
     tree = {}
     for path in paths:
-        if not path: continue # Skip None or empty strings
+        if not path: continue
         path = path.replace('\\', '/') 
         parts = path.split('/')
         if parts == ['.'] or parts == ['']: continue
@@ -757,32 +770,20 @@ def _transcode_video_task(video_id):
             if os.path.exists(output_path):
                 print(f"  - Transcoded file already exists: {output_path}")
             else:
-                # --- CHECK FOR HARDWARE ACCELERATION ---
                 if APP_HW_ACCEL_MODE == 'qsv':
                     print(f"  - [HW-VAAPI] Using HYBRID (CPU decode + VAAPI encode) for: {video.filename}")
                     ffmpeg_cmd = [
                         'ffmpeg',
-                        
-                        # 1. Specify the device globally for the filtergraphs
                         '-vaapi_device', '/dev/dri/renderD128', 
-                        
-                        # 2. Use default CPU decoder (more stable)
                         '-i', input_path,
-                        
-                        # 3. Upload the CPU-decoded frame (format nv12) to the GPU,
-                        #    scale it on the GPU, and prepare it for the encoder
                         '-vf', "format=nv12,hwupload,scale_vaapi=w='min(iw,1920)':h='min(ih,1080)'",
-                        
-                        # 4. Use the VAAPI *encoder* (the hard part)
                         '-c:v', 'h264_vaapi',
-                        
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-movflags', '+faststart',
                         output_path
                     ]
                 else:
-                    # Default to software (libx264)
                     print(f"  - [CPU] Using software (libx264) for: {video.filename}")
                     ffmpeg_cmd = [
                         'ffmpeg',
@@ -796,7 +797,6 @@ def _transcode_video_task(video_id):
                         '-movflags', '+faststart',
                         output_path
                     ]
-                # --- END OF LOGIC ---
                 
                 print(f"  - Starting transcode: {' '.join(ffmpeg_cmd)}")
                 sys.stdout.flush()
@@ -823,7 +823,6 @@ def _transcode_video_task(video_id):
 ## --- Initialization Function ---
 def initialize_database():
     """Checks if DB is empty and starts initial scan."""
-    # This is called *after* db.create_all()
     with app.app_context():
         print("Initializing database...")
         video_count = Video.query.count()
@@ -832,7 +831,8 @@ def initialize_database():
             if SCAN_LOCK.acquire(blocking=False):
                 print("Lock acquired. Starting initial background scan...")
                 SCAN_STATUS = {"status": "scanning", "message": "Starting initial scan...", "progress": 0}
-                scan_thread = threading.Thread(target=_scan_videos_task)
+                # Run a full scan the first time
+                scan_thread = threading.Thread(target=_scan_videos_task, args=(True,))
                 scan_thread.start()
             else:
                 print("Scan lock is busy (another scan is already running).")
@@ -842,15 +842,12 @@ def initialize_database():
 
 
 ## --- Main Routes ---
-
 @app.route('/')
 def home():
     """Serves the main index.html template."""
     return render_template('index.html')
 
-## --- API: Get All Data ---
-
-# --- NEW: Metadata Endpoint ---
+## --- API Endpoints ---
 @app.route('/api/metadata')
 def get_metadata():
     """
@@ -860,57 +857,46 @@ def get_metadata():
     playlists = SmartPlaylist.query.order_by(SmartPlaylist.id.asc()).all()
     playlist_dtos = [p.to_dict() for p in playlists]
     
-    # Build folder tree from the new `relative_path` column (much faster)
     all_paths = db.session.query(Video.relative_path).distinct().all()
     folder_tree = build_folder_tree([p[0] for p in all_paths if p[0]])
     
-    # --- THIS IS THE FIX ---
-    # Efficiently query all author counts at once
     author_counts_query = db.session.query(
         Video.show_title, 
         func.count(Video.id)
     ).group_by(Video.show_title).all()
     
-    # Convert list of tuples [('Author A', 10), (None, 5)] to a dict
     author_counts_map = {}
     for author, count in author_counts_query:
-        key = author if author else "Unknown Show" # Match frontend logic
+        key = author if author else "Unknown Show"
         author_counts_map[key] = count
-    # --- END FIX ---
 
     return jsonify({
         'folder_tree': folder_tree,
         'smartPlaylists': playlist_dtos,
-        'author_counts': author_counts_map # --- AND THIS FIX ---
+        'author_counts': author_counts_map
     })
 
-# --- NEW: Paginated Videos Endpoint ---
 @app.route('/api/videos')
 def get_videos():
     """
     Returns paginated video data based on all filter, sort, and view parameters.
     """
     try:
-        # --- 1. Get All Parameters ---
         page = request.args.get('page', 1, type=int)
         per_page = 50
         
-        # View & Filter State
         viewType = request.args.get('viewType', 'all')
         viewId = request.args.get('viewId', None)
         viewAuthor = request.args.get('viewAuthor', None)
         searchQuery = request.args.get('searchQuery', None)
         sortOrder = request.args.get('sortOrder', 'aired_newest')
         
-        # Global Filters
         filterShorts = request.args.get('filterShorts', 'normal')
         filterVR = request.args.get('filterVR', 'normal')
         filterOptimized = request.args.get('filterOptimized', 'normal')
 
-        # --- 2. Build Base Query ---
         base_query = Video.query
         
-        # --- 3. Apply View Filter (viewType) ---
         if viewType == 'favorites':
             base_query = base_query.filter(Video.is_favorite == True)
         elif viewType == 'watchLater':
@@ -928,20 +914,13 @@ def get_videos():
         elif viewType == 'author' and viewAuthor:
             base_query = base_query.filter(Video.show_title == viewAuthor)
         elif viewType == 'folder' and viewId:
-            # Use the new relative_path column for efficient folder filtering
             base_query = base_query.filter(
                 or_(
                     Video.relative_path == viewId,
                     Video.relative_path.like(viewId + '/%')
                 )
             )
-        # 'all' and 'smart_playlist' (handled by client) don't add filters here
             
-        
-        # --- 4. Apply Global Filters (Solo / Hide) ---
-        # Note: These filters are NOT applied if we are already in that view
-        
-        # Solo Logic
         isShortsSolo = filterShorts == 'solo' and viewType != 'shorts'
         isVRSolo = filterVR == 'solo' and viewType not in ['VR180', 'VR360']
         isOptimizedSolo = filterOptimized == 'solo' and viewType != 'optimized'
@@ -957,7 +936,6 @@ def get_videos():
                 solo_filters.append(Video.transcoded_path != None)
             base_query = base_query.filter(or_(*solo_filters))
 
-        # Hide Logic (only applies if Solo is not active)
         if not isSoloActive:
             if filterShorts == 'hide' and viewType != 'shorts':
                 base_query = base_query.filter(Video.is_short == False)
@@ -966,7 +944,6 @@ def get_videos():
             if filterOptimized == 'hide' and viewType != 'optimized':
                 base_query = base_query.filter(Video.transcoded_path == None)
 
-        # --- 5. Apply Search Query ---
         if searchQuery:
             search_term = f"%{searchQuery.lower()}%"
             base_query = base_query.filter(
@@ -977,7 +954,6 @@ def get_videos():
                 )
             )
             
-        # --- 6. Apply Sort Order ---
         if viewType == 'history':
             base_query = base_query.order_by(Video.last_watched.desc().nullslast())
         else:
@@ -990,13 +966,11 @@ def get_videos():
             else: # aired_newest
                 base_query = base_query.order_by(Video.aired.desc().nullslast())
 
-        # --- 7. Paginate the Final Query ---
         pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
         
         videos_on_page = pagination.items
         video_dtos = [v.to_dict() for v in videos_on_page]
 
-        # --- 8. Return Paginated Results ---
         return jsonify({
             'articles': video_dtos,
             'total_items': pagination.total,
@@ -1009,8 +983,6 @@ def get_videos():
         print(f"Error in /api/videos: {e}")
         return jsonify({"error": str(e)}), 500
 
-
-# --- NEW: Unpaginated endpoint for Smart Playlists ---
 @app.route('/api/videos_all')
 def get_all_videos():
     """
@@ -1024,9 +996,6 @@ def get_all_videos():
     except Exception as e:
         print(f"Error in /api/videos_all: {e}")
         return jsonify({"error": str(e)}), 500
-
-
-## --- API: Playlist Management ---
 
 @app.route('/api/playlist/create', methods=['POST'])
 def create_playlist():
@@ -1121,8 +1090,6 @@ def remove_playlist_filter(playlist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-## --- API: Video/Thumbnail Serving ---
-
 @app.route('/api/video/<int:video_id>')
 def stream_video(video_id):
     """Streams the original video file."""
@@ -1136,10 +1103,7 @@ def stream_video(video_id):
 
 @app.route('/api/thumbnail/<int:video_id>')
 def get_thumbnail(video_id):
-    """
-    Serves the highest priority thumbnail for a video.
-    Priority: Custom -> Auto-generated/Local
-    """
+    """Serves the highest priority thumbnail for a video."""
     video = Video.query.get_or_404(video_id)
     
     path_to_serve = None
@@ -1169,9 +1133,7 @@ def get_show_poster(video_id):
 
 @app.route('/api/subtitle/<int:video_id>')
 def get_subtitle(video_id):
-    """
-    Serves the subtitle file, converting it from SRT to VTT on-the-fly.
-    """
+    """Serves the subtitle file, converting it from SRT to VTT on-the-fly."""
     video = Video.query.get_or_404(video_id)
     if not video.subtitle_path or not os.path.exists(video.subtitle_path):
         return jsonify({"error": "Subtitle file not found"}), 404
@@ -1195,9 +1157,6 @@ def get_subtitle(video_id):
     response = Response(vtt_content, mimetype='text/vtt; charset=utf-8')
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
-
-
-## --- API: Video Actions (Favorites/Watch Later/Progress) ---
 
 @app.route('/api/article/<int:article_id>/favorite', methods=['POST'])
 def toggle_favorite(article_id):
@@ -1234,12 +1193,12 @@ def update_video_progress(video_id):
         'last_watched': video.last_watched.isoformat() if video.last_watched else None
     })
 
-## --- API: Background Tasks (Scan & Thumbnails) ---
-
 @app.route('/api/scan_videos', methods=['POST'])
 def scan_videos_route():
     """
-    API endpoint to trigger a full video scan *in the background*.
+    API endpoint to trigger a video scan in the background.
+    Accepts {'full_scan': true} to run a full library refresh.
+    Defaults to a "quick scan" (full_scan=False) which only adds new files.
     """
     print("API: Received scan request.")
     if not SCAN_LOCK.acquire(blocking=False):
@@ -1247,9 +1206,17 @@ def scan_videos_route():
         return jsonify({"message": "Scan already in progress."}), 409
     
     try:
-        print("API: Starting background video scan...")
-        SCAN_STATUS = {"status": "scanning", "message": "Scan started by user.", "progress": 0}
-        scan_thread = threading.Thread(target=_scan_videos_task)
+        data = request.get_json()
+        full_scan = data.get('full_scan', False)
+        
+        if full_scan:
+            print("API: Starting FULL background video scan...")
+            SCAN_STATUS = {"status": "scanning", "message": "Full scan started by user.", "progress": 0}
+        else:
+            print("API: Starting NEW-ONLY background video scan...")
+            SCAN_STATUS = {"status": "scanning", "message": "New-only scan started by user.", "progress": 0}
+            
+        scan_thread = threading.Thread(target=_scan_videos_task, args=(full_scan,))
         scan_thread.start()
         return jsonify({"message": "Scan started in background."}), 202
     except Exception as e:
@@ -1260,9 +1227,7 @@ def scan_videos_route():
 
 @app.route('/api/thumbnails/generate_missing', methods=['POST'])
 def generate_missing_thumbnails_route():
-    """
-    Triggers a background task to generate missing thumbnails.
-    """
+    """Triggers a background task to generate missing thumbnails."""
     global THUMBNAIL_STATUS
     
     if not thumbnail_generation_lock.acquire(blocking=False):
@@ -1291,6 +1256,27 @@ def generate_missing_thumbnails_route():
         THUMBNAIL_STATUS.update({"status": "error", "message": str(e)})
         return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
 
+@app.route('/api/library/cleanup', methods=['POST'])
+def cleanup_library_route():
+    """Triggers a background task to prune deleted videos."""
+    global CLEANUP_STATUS
+    
+    if not CLEANUP_LOCK.acquire(blocking=False):
+        print("API: Cleanup already in progress.")
+        return jsonify({"message": "Cleanup is already in progress."}), 409
+    
+    try:
+        print("API: Starting background library cleanup thread...")
+        CLEANUP_STATUS.update({"status": "cleaning", "message": "Starting cleanup..."})
+        thread = threading.Thread(target=_cleanup_library_task)
+        thread.start()
+        return jsonify({"message": "Library cleanup started in background."}), 202
+    except Exception as e:
+        CLEANUP_LOCK.release()
+        print(f"API: Failed to start background cleanup task: {str(e)}")
+        CLEANUP_STATUS.update({"status": "error", "message": str(e)})
+        return jsonify({"error": f"Failed to start background task: {str(e)}"}), 500
+
 @app.route('/api/scan/status', methods=['GET'])
 def get_scan_status():
     global SCAN_STATUS
@@ -1305,6 +1291,11 @@ def get_thumbnail_status():
 def get_transcode_status():
     global TRANSCODE_STATUS
     return jsonify(TRANSCODE_STATUS)
+
+@app.route('/api/library/cleanup/status', methods=['GET'])
+def get_cleanup_status():
+    global CLEANUP_STATUS
+    return jsonify(CLEANUP_STATUS)
 
 @app.route('/api/video/<int:video_id>/stream_transcoded')
 def stream_transcoded_video(video_id):
@@ -1368,7 +1359,6 @@ def delete_transcode_route(video_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# --- API routes for Custom Thumbnails ---
 @app.route('/api/video/<int:video_id>/thumbnail/create_at_time', methods=['POST'])
 def create_custom_thumbnail(video_id):
     """
@@ -1384,14 +1374,14 @@ def create_custom_thumbnail(video_id):
     
     try:
         input_path = video.video_path
-        output_path = get_custom_thumbnail_path(input_path) # Get the persistent path
+        output_path = get_custom_thumbnail_path(input_path)
         ss_time = str(datetime.timedelta(seconds=timestamp))
 
         print(f"  - Generating custom thumb for {video.filename} at {ss_time}...")
         
         result = subprocess.run([
             "ffmpeg",
-            "-ss", ss_time,   # <--- FAST SEEK (Before -i)
+            "-ss", ss_time,
             "-i", input_path,
             "-vframes", "1",
             "-q:v", "2",
@@ -1433,7 +1423,6 @@ def create_custom_thumbnail(video_id):
 def delete_custom_thumbnail(video_id):
     """
     Deletes a video's custom thumbnail.
-    The app will fall back to the auto-generated/local thumb.
     """
     video = Video.query.get_or_404(video_id)
     if not video.custom_thumbnail_path:
@@ -1451,16 +1440,14 @@ def delete_custom_thumbnail(video_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-# --- API route for manual VR tagging ---
 @app.route('/api/video/<int:video_id>/set_tag', methods=['POST'])
 def set_video_tag(video_id):
     """
-    Manually sets the video tag. This can be 'short', 'vr180', 'vr360', or 'none'.
-    This single endpoint manages both the 'is_short' boolean and 'video_type' string.
+    Manually sets the video tag (short, vr180, vr360, or none).
     """
     video = Video.query.get_or_404(video_id)
     data = request.get_json()
-    tag = data.get('tag', 'none') # Get the new tag, default to 'none'
+    tag = data.get('tag', 'none')
     
     try:
         if tag == 'short':
@@ -1468,11 +1455,11 @@ def set_video_tag(video_id):
             video.video_type = None
         elif tag == 'vr180':
             video.is_short = False
-            video.video_type = 'VR180_SBS' # Default to Side-by-Side
+            video.video_type = 'VR180_SBS'
         elif tag == 'vr360':
             video.is_short = False
             video.video_type = 'VR360'
-        else: # 'none' or any other value
+        else:
             video.is_short = False
             video.video_type = None
         
@@ -1485,9 +1472,7 @@ def set_video_tag(video_id):
 
 
 ## --- Main Execution ---
-
 initialize_database()
 if __name__ == '__main__':
-    # This block is now only for local development (e.g., `python app.py`)
     debug_mode = os.environ.get('FLASK_DEBUG') == '1'
     app.run(debug=debug_mode, host='0.0.0.0', port=5000)

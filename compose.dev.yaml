@@ -3,20 +3,20 @@ services:
     build: .
     container_name: volumeplay-dev
     ports:
-      - "2124:5000"
+      - "2121:5000"
     volumes:
       - ./videos:/videos:ro
       - ./data:/data
       - .:/app
 
 # --- Enable for Intel iGPU QuickSync 
-    devices:
-      - /dev/dri:/dev/dri
+#    devices:
+#      - /dev/dri:/dev/dri
 # ---
     environment:
       - DATA_DIR=/data
       - VIDEO_DIR=/videos
       - FLASK_DEBUG=1
       - FLASK_APP=app.py
-      - HW_ACCEL_TYPE=qsv
+#      - HW_ACCEL_TYPE=qsv
     restart: unless-stopped
