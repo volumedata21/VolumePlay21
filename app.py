@@ -883,7 +883,7 @@ def get_videos():
     """
     try:
         page = request.args.get('page', 1, type=int)
-        per_page = 50
+        per_page = 60
         
         viewType = request.args.get('viewType', 'all')
         viewId = request.args.get('viewId', None)
