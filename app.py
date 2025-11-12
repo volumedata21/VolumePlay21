@@ -963,7 +963,11 @@ def get_videos():
                 base_query = base_query.order_by(Video.uploaded_date.desc().nullslast())
             elif sortOrder == 'uploaded_oldest':
                 base_query = base_query.order_by(Video.uploaded_date.asc().nullsfirst())
-            else: # aired_newest
+            elif sortOrder == 'duration_longest':
+                base_query = base_query.order_by(Video.duration.desc().nullslast())
+            elif sortOrder == 'duration_shortest':
+                base_query = base_query.order_by(Video.duration.asc().nullsfirst())            
+            else: # aired_newest (default)
                 base_query = base_query.order_by(Video.aired.desc().nullslast())
 
         pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
