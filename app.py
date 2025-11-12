@@ -757,17 +757,25 @@ def _transcode_video_task(video_id):
             if os.path.exists(output_path):
                 print(f"  - Transcoded file already exists: {output_path}")
             else:
-                # --- NEW: Check APP_HW_ACCEL_MODE to select encoder ---
+                # --- CHECK FOR HARDWARE ACCELERATION ---
                 if APP_HW_ACCEL_MODE == 'qsv':
-                    print(f"  - [HW-VAAPI] Using VAAPI (h264_vaapi) for: {video.filename}")
+                    print(f"  - [HW-VAAPI] Using HYBRID (CPU decode + VAAPI encode) for: {video.filename}")
                     ffmpeg_cmd = [
                         'ffmpeg',
-                        '-hwaccel', 'vaapi',
-                        '-hwaccel_device', '/dev/dri/renderD128',
-                        '-hwaccel_output_format', 'vaapi',
+                        
+                        # 1. Specify the device globally for the filtergraphs
+                        '-vaapi_device', '/dev/dri/renderD128', 
+                        
+                        # 2. Use default CPU decoder (more stable)
                         '-i', input_path,
-                        '-vf', "scale_vaapi=w='min(iw,1920)':h='min(ih,1080)'", # Use the vaapi scaler
-                        '-c:v', 'h264_vaapi',               # Use the vaapi encoder
+                        
+                        # 3. Upload the CPU-decoded frame (format nv12) to the GPU,
+                        #    scale it on the GPU, and prepare it for the encoder
+                        '-vf', "format=nv12,hwupload,scale_vaapi=w='min(iw,1920)':h='min(ih,1080)'",
+                        
+                        # 4. Use the VAAPI *encoder* (the hard part)
+                        '-c:v', 'h264_vaapi',
+                        
                         '-c:a', 'aac',
                         '-b:a', '128k',
                         '-movflags', '+faststart',
@@ -788,7 +796,7 @@ def _transcode_video_task(video_id):
                         '-movflags', '+faststart',
                         output_path
                     ]
-                # --- END OF NEW LOGIC ---
+                # --- END OF LOGIC ---
                 
                 print(f"  - Starting transcode: {' '.join(ffmpeg_cmd)}")
                 sys.stdout.flush()

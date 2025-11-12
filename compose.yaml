@@ -6,13 +6,19 @@ services:
       - "2121:5000"
     volumes:
       - ./videos:/videos:ro # Mounts your local videos folder as read-only
-      - ./data:/data # Mounts local ./data folder for the persistent database
-      # To hide a folder, create a file called 'vd21_hide' and scanner will ignore folder and subfolders.
+      - ./data:/data # Mounts local ./data folder for the persistent database        
+    
+    # --- Enable for Intel iGPU QuickSync
+    devices:
+      - /dev/dri:/dev/dri
+    # ---
+
     environment:
       - DATA_DIR=/data
       - VIDEO_DIR=/videos
-      - FLASK_DEBUG=0 # Always 0 for production
-#      - HW_ACCEL_TYPE=qsv
-#    devices:
-#      - /dev/dri:/dev/dri
+      - FLASK_DEBUG=0 # 0 for production
+      
+    # --- Enable Hardware Acceleration ---
+      - HW_ACCEL_TYPE=qsv
+      
     restart: unless-stopped
