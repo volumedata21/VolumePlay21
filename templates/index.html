@@ -107,7 +107,8 @@
                             <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
                                 draggable="true"
                                 class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                x-text="tag" :title="'Filter by: ' + tag + ' (Drag to Playlist)'">
+                                x-text="tag.replace(/_/g, ' ')"
+                                :title="'Filter by: ' + tag.replace(/_/g, ' ') + ' (Drag to Playlist)'">
                             </a>
                         </template>
                         <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
