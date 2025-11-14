@@ -6,7 +6,8 @@ function videoApp() {
         // --- State Variables (Managed by this component) ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isLoading: false, // For loading video pages
+        isPlaylistModalOpen: false, // NEW: For the "Add to Playlist" modal
+        isLoading: false,
 
         // --- Task Status ---
         scanType: 'idle', // 'idle', 'new', 'full'
@@ -16,17 +17,14 @@ function videoApp() {
         isGeneratingThumbnails: false,
         thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
         thumbnailPollInterval: null,
-
+        
         isCleaningUp: false,
         cleanupStatus: { status: 'idle', message: '', progress: 0 },
         cleanupPollInterval: null,
 
-        // --- NEW: Transcode Queue Logic ---
-        transcodeQueue: [], // An array of video IDs waiting to be transcoded
-        transcodeStatus: { status: 'idle', message: '', video_id: null }, // The *currently running* job
+        transcodeQueue: [],
+        transcodeStatus: { status: 'idle', message: '', video_id: null },
         transcodePollInterval: null,
-        // --- END NEW ---
-
         isCreatingThumb: false,
 
         // Player state
@@ -43,9 +41,10 @@ function videoApp() {
         sortOrder: 'aired_newest',
         appData: {
             videos: [],
-            allVideos: [], // Cache for smart playlists
+            allVideos: [],
             folder_tree: {},
             smartPlaylists: [],
+            standardPlaylists: [], // NEW: For standard playlists
             authorCounts: {}
         },
         filterHistory: [],
@@ -72,20 +71,30 @@ function videoApp() {
                 this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
             }
 
-            // Watch filters and trigger a new search
             this.$watch('searchQuery', () => this.fetchVideos(true));
             this.$watch('sortOrder', () => this.fetchVideos(true));
             this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
             this.$watch('filterSettings', () => this.fetchVideos(true), { deep: true });
 
-            this.fetchMetadata(); // Load folders/playlists once
-            this.fetchVideos(true); // Load first page of videos
-
-            // Start all background pollers
+            this.fetchMetadata();
+            this.fetchVideos(true);
+            
             this.startScanPolling();
             this.startThumbnailPolling();
             this.startCleanupPolling();
-            this.startTranscodePolling(); // NEW: This now runs 24/7
+            this.startTranscodePolling();
+
+            window.addEventListener('focus', () => {
+                if (!this.isAnyTaskRunning()) {
+                    this.fetchVideos(true);
+                }
+            });
+
+            setInterval(() => {
+                if (!this.isModalOpen && !this.isAnyTaskRunning()) {
+                    this.fetchVideos(true);
+                }
+            }, 3600000);
         },
 
         // --- API Fetching ---
@@ -96,11 +105,13 @@ function videoApp() {
                 const data = await response.json();
                 this.appData.folder_tree = data.folder_tree || {};
                 this.appData.smartPlaylists = data.smartPlaylists || [];
+                this.appData.standardPlaylists = data.standardPlaylists || []; // NEW
                 this.appData.authorCounts = data.author_counts || {};
             } catch (e) {
                 console.error('Error fetching metadata:', e);
                 this.appData.folder_tree = {};
                 this.appData.smartPlaylists = [];
+                this.appData.standardPlaylists = [];
             }
         },
 
@@ -128,7 +139,7 @@ function videoApp() {
                         const data = await response.json();
                         this.appData.allVideos = data.articles || [];
                     }
-                    this.appData.videos = [];
+                    this.appData.videos = []; // This view is handled by filteredVideos
                     this.totalItems = 0;
                     this.totalPages = 1;
                 } catch (e) {
@@ -139,10 +150,37 @@ function videoApp() {
                 return;
             }
 
+            // Standard Playlist Exception: Not paginated
+            if (this.currentView.type === 'standard_playlist') {
+                this.isLoading = false; // We will set it inside the block
+                // This view type is handled by the server, but not paginated.
+                // We just need to fetch it once.
+                if (isNewQuery) {
+                    this.isLoading = true;
+                    const params = new URLSearchParams({
+                        viewType: this.currentView.type,
+                        viewId: this.currentView.id,
+                        sortOrder: this.sortOrder
+                    });
+                    try {
+                        const response = await fetch(`/api/videos?${params.toString()}`);
+                        const data = await response.json();
+                        this.appData.videos = data.articles;
+                        this.totalItems = data.total_items;
+                        this.totalPages = data.total_pages; // Will be 1
+                    } catch (e) {
+                        console.error('Error fetching standard playlist videos:', e);
+                    } finally {
+                        this.isLoading = false;
+                    }
+                }
+                return;
+            }
+
             // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
-                per_page: 30, // Using 30 to make grids line up
+                per_page: 30,
                 searchQuery: this.searchQuery || '',
                 sortOrder: this.sortOrder,
                 viewType: this.currentView.type || 'all',
@@ -201,7 +239,7 @@ function videoApp() {
                         }
                     });
                 }
-
+                
                 if (this.searchQuery.trim() !== '') {
                     const query = this.searchQuery.toLowerCase();
                     videos = videos.filter(v =>
@@ -265,7 +303,7 @@ function videoApp() {
             if (this.isCleaningUp) {
                 return 'Pruning library...';
             }
-
+            
             if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist') {
                 if (this.searchQuery.trim() !== '') return 'No videos match your search.';
                 if (!this.appData.videos || this.totalItems === 0) {
@@ -278,6 +316,11 @@ function videoApp() {
                 if (this.isLoading) return 'Loading videos for playlist...';
                 return 'No videos match this playlist\'s filters.';
             }
+            
+            if (this.appData.videos.length === 0 && this.currentView.type === 'standard_playlist') {
+                return 'This playlist is empty.';
+            }
+
             return 'No videos found.';
         },
 
@@ -347,10 +390,10 @@ function videoApp() {
         },
 
         // --- Smart Playlist Actions ---
-        async createPlaylist(playlistName) {
+        async createSmartPlaylist(playlistName) {
             if (!playlistName || playlistName.trim() === '') return;
             try {
-                const response = await fetch('/api/playlist/create', {
+                const response = await fetch('/api/playlist/smart/create', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: playlistName.trim() })
@@ -366,13 +409,13 @@ function videoApp() {
             }
         },
 
-        async renamePlaylist(playlist) {
+        async renameSmartPlaylist(playlist) {
             const newName = prompt(`Rename playlist '${playlist.name}':`, playlist.name);
             if (!newName || newName.trim() === '' || newName.trim() === playlist.name) {
                 return;
             }
             try {
-                const response = await fetch(`/api/playlist/${playlist.id}/rename`, {
+                const response = await fetch(`/api/playlist/smart/${playlist.id}/rename`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ name: newName.trim() })
@@ -392,10 +435,10 @@ function videoApp() {
             }
         },
 
-        async deletePlaylist(playlistId) {
+        async deleteSmartPlaylist(playlistId) {
             if (confirm('Are you sure you want to permanently delete this playlist?')) {
                 try {
-                    const response = await fetch(`/api/playlist/${playlistId}/delete`, {
+                    const response = await fetch(`/api/playlist/smart/${playlistId}/delete`, {
                         method: 'POST'
                     });
                     if (response.ok) {
@@ -423,7 +466,7 @@ function videoApp() {
 
         async removeFilterFromPlaylist(playlistId, filterId) {
             try {
-                const response = await fetch(`/api/playlist/${playlistId}/filter/remove`, {
+                const response = await fetch(`/api/playlist/smart/${playlistId}/filter/remove`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filterId: filterId })
@@ -445,7 +488,7 @@ function videoApp() {
 
         async saveFilterToPlaylist(playlistId, filter) {
             try {
-                const response = await fetch(`/api/playlist/${playlistId}/filter`, {
+                const response = await fetch(`/api/playlist/smart/${playlistId}/filter`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filter: filter })
@@ -463,7 +506,64 @@ function videoApp() {
                 console.error('Error saving filter to playlist:', e);
             }
         },
+        
+        // --- NEW: Standard Playlist Functions ---
+        async openPlaylistModal(videoId) {
+            try {
+                const response = await fetch(`/api/video/${videoId}/playlists`);
+                if (!response.ok) throw new Error('Failed to fetch video playlist status');
+                const data = await response.json();
+                this.appData.standardPlaylists = data;
+                this.isPlaylistModalOpen = true;
+            } catch (e) {
+                console.error("Error opening playlist modal:", e);
+            }
+        },
 
+        async createStandardPlaylist(name, videoId = null) {
+            if (!name || name.trim() === '') return;
+            try {
+                const response = await fetch('/api/playlist/standard/create', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name.trim(), video_id: videoId })
+                });
+                
+                const newPlaylists = await response.json();
+                if (!response.ok) {
+                    throw new Error(newPlaylists.error || 'Failed to create playlist');
+                }
+                
+                // Server returns the full, updated list of playlists
+                this.appData.standardPlaylists = newPlaylists;
+                
+                // If in the sidebar, this will trigger a list refresh.
+                // If in the modal, this updates the checkboxes.
+                
+            } catch (e) {
+                console.error('Error creating playlist:', e);
+                alert(`Error: ${e.message}`); // Simple error feedback
+            }
+        },
+
+        async toggleVideoInPlaylist(playlistId, videoId) {
+            try {
+                const response = await fetch('/api/playlist/toggle_video', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ playlist_id: playlistId, video_id: videoId })
+                });
+                const updatedPlaylists = await response.json();
+                if (!response.ok) {
+                    throw new Error(updatedPlaylists.error || 'Failed to update playlist');
+                }
+                // Re-assign the list to update the modal checkboxes
+                this.appData.standardPlaylists = updatedPlaylists;
+            } catch (e) {
+                console.error('Error toggling video in playlist:', e);
+            }
+        },
+        // --- END NEW ---
 
         // --- UI Actions ---
         goBackOneFilter() {
@@ -516,11 +616,15 @@ function videoApp() {
                 const playlist = this.appData.smartPlaylists.find(p => p.id === id);
                 this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
             }
+            else if (type === 'standard_playlist') { // NEW
+                const playlist = this.appData.standardPlaylists.find(p => p.id === id);
+                this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
+            }
             else { this.currentTitle = 'All Videos'; }
         },
 
         loadMoreVideos() {
-            if (this.currentView.type !== 'smart_playlist') {
+            if (this.currentView.type !== 'smart_playlist' && this.currentView.type !== 'standard_playlist') {
                 this.fetchVideos(false);
             }
         },
@@ -682,17 +786,17 @@ function videoApp() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tag: nextTag })
             })
-                .then(res => {
-                    if (!res.ok) throw new Error('Failed to update tag');
-                    return res.json();
-                })
-                .then(updatedVideo => {
-                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
-                    this.updateVideoData(updatedVideo);
-                })
-                .catch(err => {
-                    console.error('Failed to update video tag:', err);
-                });
+            .then(res => {
+                if (!res.ok) throw new Error('Failed to update tag');
+                return res.json();
+            })
+            .then(updatedVideo => {
+                this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+                this.updateVideoData(updatedVideo);
+            })
+            .catch(err => {
+                console.error('Failed to update video tag:', err);
+            });
         },
 
         // --- Content Rendering ---
@@ -836,7 +940,7 @@ function videoApp() {
         async scanNewVideos() {
             if (this.isAnyTaskRunning()) return;
             this.scanType = 'new';
-            this.isScanning = true; // Set general scanning flag
+            this.isScanning = true; 
             try {
                 const response = await fetch('/api/scan_videos', {
                     method: 'POST',
@@ -864,9 +968,9 @@ function videoApp() {
                 return;
             }
             this.scanType = 'full';
-            this.isScanning = true; // Set general scanning flag
+            this.isScanning = true;
             try {
-                const response = await fetch('/api/scan_videos', {
+                const response = await fetch('/api/scan_videos', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ full_scan: true })
@@ -888,7 +992,7 @@ function videoApp() {
 
         startScanPolling() {
             if (this.scanPollInterval) clearInterval(this.scanPollInterval);
-
+            
             const poll = async () => {
                 try {
                     const response = await fetch('/api/scan/status');
@@ -901,7 +1005,6 @@ function videoApp() {
                     } else if (data.status === 'error') {
                         this.stopScanPolling(false);
                     } else {
-                        // Task is running. Figure out which one.
                         this.isScanning = true;
                         if (data.message.includes('Full')) {
                             this.scanType = 'full';
@@ -915,8 +1018,7 @@ function videoApp() {
                     this.stopScanPolling(false);
                 }
             };
-
-            // Do not poll immediately, let the UI state set first
+            
             this.scanPollInterval = setInterval(poll, 3000);
         },
 
@@ -936,7 +1038,7 @@ function videoApp() {
 
         async generateMissingThumbnails() {
             if (this.isAnyTaskRunning()) return;
-            this.isGeneratingThumbnails = true; // Set state immediately
+            this.isGeneratingThumbnails = true;
             try {
                 const response = await fetch('/api/thumbnails/generate_missing', { method: 'POST' });
                 if (response.status === 200 || response.status === 202) {
@@ -974,8 +1076,7 @@ function videoApp() {
                     this.stopThumbnailPolling(false);
                 }
             };
-
-            // Do not poll immediately
+            
             this.thumbnailPollInterval = setInterval(poll, 2000);
         },
 
@@ -996,7 +1097,7 @@ function videoApp() {
             if (!confirm('Are you sure you want to prune the library? This will permanently remove any videos from the database that are not found on disk.')) {
                 return;
             }
-            this.isCleaningUp = true; // Set state immediately
+            this.isCleaningUp = true;
             try {
                 const response = await fetch('/api/library/cleanup', { method: 'POST' });
                 if (response.status === 202 || response.status === 409) {
@@ -1014,7 +1115,7 @@ function videoApp() {
 
         startCleanupPolling() {
             if (this.cleanupPollInterval) clearInterval(this.cleanupPollInterval);
-
+            
             const poll = async () => {
                 try {
                     const response = await fetch('/api/library/cleanup/status');
@@ -1035,8 +1136,7 @@ function videoApp() {
                     this.stopCleanupPolling(false);
                 }
             };
-
-            // Do not poll immediately
+            
             this.cleanupPollInterval = setInterval(poll, 3000);
         },
 
@@ -1065,15 +1165,13 @@ function videoApp() {
         },
 
         async startTranscode(video) {
-            if (this.isOptimizing(video.id)) return; // Already queued or running
+            if (this.isOptimizing(video.id)) return;
             this.transcodeQueue.push(video.id);
-            this.processTranscodeQueue(); // Try to start the queue
+            this.processTranscodeQueue();
         },
 
         async deleteTranscode(video) {
-            // This only deletes completed transcodes.
-            // We won't add logic to cancel a running/queued transcode for simplicity.
-            if (this.isCurrentlyTranscoding(video.id)) return;
+            if (this.isOptimizing(video.id)) return; 
 
             try {
                 const response = await fetch(`/api/video/${video.id}/transcode/delete`, { method: 'POST' });
@@ -1089,40 +1187,35 @@ function videoApp() {
                 console.error('Error deleting transcode:', e);
             }
         },
-
+        
         async processTranscodeQueue() {
-            if (this.transcodeStatus.status !== 'idle') return; // A job is already running
-            if (this.transcodeQueue.length === 0) return; // Queue is empty
+            if (this.transcodeStatus.status !== 'idle') return;
+            if (this.transcodeQueue.length === 0) return;
 
-            const nextVideoId = this.transcodeQueue[0]; // Get the next video ID (don't remove yet)
-
+            const nextVideoId = this.transcodeQueue[0];
+            
             try {
                 const response = await fetch(`/api/video/${nextVideoId}/transcode/start`, { method: 'POST' });
-
-                if (response.status === 202) { // 202 = Accepted
-                    // Success! Server started the job. Remove it from queue.
-                    this.transcodeQueue.shift();
-                    // Manually set status so UI updates *instantly*
+                
+                if (response.status === 202) { 
+                    this.transcodeQueue.shift(); 
                     this.transcodeStatus = { status: 'starting', message: 'Starting...', video_id: nextVideoId };
-                } else if (response.status === 409) { // 409 = Conflict
-                    // This shouldn't happen, but it means the poller will just take over.
+                } else if (response.status === 409) { 
                     console.warn('Transcode already running, poller will take over.');
                 } else {
-                    // The request failed
                     const result = await response.json();
                     console.error('Failed to start transcode:', result.error);
-                    this.transcodeQueue.shift(); // Remove the failing job from queue
+                    this.transcodeQueue.shift();
                 }
             } catch (e) {
                 console.error('Error starting transcode:', e);
-                this.transcodeQueue.shift(); // Remove the failing job
+                this.transcodeQueue.shift();
             }
         },
 
         startTranscodePolling() {
-            // This is a global, 24/7 poller that manages the queue
             if (this.transcodePollInterval) clearInterval(this.transcodePollInterval);
-
+            
             this.transcodePollInterval = setInterval(async () => {
                 const response = await fetch('/api/transcode/status');
                 const data = await response.json();
@@ -1130,28 +1223,43 @@ function videoApp() {
                 const oldVideoId = this.transcodeStatus.video_id;
                 this.transcodeStatus = data;
 
-                // A job just finished (was running, now idle)
                 if (oldStatus !== 'idle' && data.status === 'idle') {
                     console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
-                    this.refreshModalVideoData(oldVideoId); // Refresh the video that *just* finished
-                    this.processTranscodeQueue(); // Check for the next job
+                    this.refreshModalVideoData(oldVideoId);
+                    this.processTranscodeQueue();
                 }
-
-                // No job is running, but the queue has items
+                
                 if (data.status === 'idle' && this.transcodeQueue.length > 0) {
                     this.processTranscodeQueue();
                 }
-            }, 3000); // Poll every 3 seconds
+            }, 3000);
         },
 
         async refreshModalVideoData(videoId) {
+            // This is a bug-fix. The old method was wrong.
+            // This new method fetches *only* the single video that was updated.
             if (!videoId) return;
             try {
-                // We'll just re-fetch all video data to refresh.
-                // A more complex solution would fetch just one video.
-                this.fetchVideos(true);
+                const params = new URLSearchParams({ 
+                    viewType: 'video', 
+                    viewId: videoId 
+                });
+                const response = await fetch(`/api/videos?${params.toString()}`);
+                const data = await response.json();
+                
+                if (data.articles && data.articles.length > 0) {
+                    const newVideoData = data.articles[0];
+                    this.updateVideoData(newVideoData); 
+                    this.modalVideo = newVideoData; 
+                    this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
+                    this.refreshPlayerData();
+                    console.log('Player source updated.');
+                } else {
+                    this.fetchVideos(true); // Fallback
+                }
             } catch (e) {
-                console.error("Failed to refresh video data after transcode", e);
+                console.error("Failed to refresh single video data", e);
+                this.fetchVideos(true); // Fallback
             }
         },
 

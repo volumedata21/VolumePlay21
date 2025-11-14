@@ -160,6 +160,34 @@ class SmartPlaylist(db.Model):
             'filters': json.loads(self.filters) if self.filters else [], 
         }
 
+# --- NEW: Standard Playlist Models ---
+class StandardPlaylist(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(200), nullable=False, unique=True)
+    
+    def to_dict(self, video_ids=None):
+        # video_ids is an optional set of IDs for the current video
+        # to quickly check if this video is in this playlist
+        is_in_playlist = False
+        if video_ids and self.id in video_ids:
+            is_in_playlist = True
+
+        return {
+            'id': self.id,
+            'name': self.name,
+            'is_in_playlist': is_in_playlist 
+        }
+
+class PlaylistItem(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    playlist_id = db.Column(db.Integer, db.ForeignKey('standard_playlist.id'), nullable=False)
+    video_id = db.Column(db.Integer, db.ForeignKey('video.id'), nullable=False)
+    
+    # Create a unique constraint to prevent adding the same video twice
+    __table_args__ = (db.UniqueConstraint('playlist_id', 'video_id', name='_playlist_video_uc'),)
+# --- END NEW ---
+
+
 with app.app_context():
     db.create_all()
 
@@ -182,6 +210,14 @@ def _prune_missing_videos(found_video_paths):
             return 0
 
         print(f"  - Prune: Found {len(paths_to_delete)} videos to delete...")
+        video_ids_to_delete = [db_video_map[path].id for path in paths_to_delete]
+
+        # --- NEW: Also prune from PlaylistItem ---
+        if video_ids_to_delete:
+            db.session.query(PlaylistItem).filter(PlaylistItem.video_id.in_(video_ids_to_delete)).delete(synchronize_session=False)
+            print(f"  - Prune: Removed {len(video_ids_to_delete)} videos from standard playlists.")
+        # --- END NEW ---
+
         for path in paths_to_delete:
             video_data = db_video_map[path]
             
@@ -564,7 +600,6 @@ def _cleanup_library_task():
             found_video_paths = set()
             video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
             
-            # Walk the directory to find all existing video files
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 dirnames[:] = [d for d in dirnames if not d.startswith('.')]
                 if 'vd21_hide' in filenames:
@@ -580,7 +615,6 @@ def _cleanup_library_task():
 
             print(f"  - Cleanup: Found {len(found_video_paths)} video files on disk.")
             
-            # Prune any videos in the DB that were not found
             CLEANUP_STATUS['message'] = "Pruning deleted videos..."
             deleted_count = _prune_missing_videos(found_video_paths)
 
@@ -870,9 +904,15 @@ def get_metadata():
         key = author if author else "Unknown Show"
         author_counts_map[key] = count
 
+    # --- NEW: Get Standard Playlists ---
+    standard_playlists = StandardPlaylist.query.order_by(StandardPlaylist.name.asc()).all()
+    standard_playlist_dtos = [p.to_dict() for p in standard_playlists]
+    # --- END NEW ---
+
     return jsonify({
         'folder_tree': folder_tree,
         'smartPlaylists': playlist_dtos,
+        'standardPlaylists': standard_playlist_dtos, # --- NEW ---
         'author_counts': author_counts_map
     })
 
@@ -883,7 +923,7 @@ def get_videos():
     """
     try:
         page = request.args.get('page', 1, type=int)
-        per_page = 60
+        per_page = 30 # Changed from 50
         
         viewType = request.args.get('viewType', 'all')
         viewId = request.args.get('viewId', None)
@@ -897,6 +937,7 @@ def get_videos():
 
         base_query = Video.query
         
+        # --- Handle Special Views ---
         if viewType == 'favorites':
             base_query = base_query.filter(Video.is_favorite == True)
         elif viewType == 'watchLater':
@@ -920,7 +961,17 @@ def get_videos():
                     Video.relative_path.like(viewId + '/%')
                 )
             )
+        # --- NEW: Handle Standard Playlist View ---
+        elif viewType == 'standard_playlist' and viewId:
+            # Get all video IDs for this playlist
+            video_ids = db.session.query(PlaylistItem.video_id).filter_by(playlist_id=viewId).all()
+            video_ids = [v[0] for v in video_ids]
+            if not video_ids:
+                video_ids = [-1] # Return no videos if empty
+            base_query = base_query.filter(Video.id.in_(video_ids))
+        # --- END NEW ---
             
+        # --- Global Filters ---
         isShortsSolo = filterShorts == 'solo' and viewType != 'shorts'
         isVRSolo = filterVR == 'solo' and viewType not in ['VR180', 'VR360']
         isOptimizedSolo = filterOptimized == 'solo' and viewType != 'optimized'
@@ -944,6 +995,7 @@ def get_videos():
             if filterOptimized == 'hide' and viewType != 'optimized':
                 base_query = base_query.filter(Video.transcoded_path == None)
 
+        # --- Search Query ---
         if searchQuery:
             search_term = f"%{searchQuery.lower()}%"
             base_query = base_query.filter(
@@ -954,6 +1006,7 @@ def get_videos():
                 )
             )
             
+        # --- Sort Order ---
         if viewType == 'history':
             base_query = base_query.order_by(Video.last_watched.desc().nullslast())
         else:
@@ -966,22 +1019,34 @@ def get_videos():
             elif sortOrder == 'duration_longest':
                 base_query = base_query.order_by(Video.duration.desc().nullslast())
             elif sortOrder == 'duration_shortest':
-                base_query = base_query.order_by(Video.duration.asc().nullsfirst())            
-            else: # aired_newest (default)
+                base_query = base_query.order_by(Video.duration.asc().nullsfirst())
+            else: # aired_newest
                 base_query = base_query.order_by(Video.aired.desc().nullslast())
 
-        pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
+        # --- Paginate and Return ---
         
-        videos_on_page = pagination.items
-        video_dtos = [v.to_dict() for v in videos_on_page]
-
-        return jsonify({
-            'articles': video_dtos,
-            'total_items': pagination.total,
-            'total_pages': pagination.pages,
-            'current_page': page,
-            'has_next_page': pagination.has_next
-        })
+        # Standard playlists are not paginated (for now)
+        if viewType == 'standard_playlist':
+            videos = base_query.all()
+            video_dtos = [v.to_dict() for v in videos]
+            return jsonify({
+                'articles': video_dtos,
+                'total_items': len(video_dtos),
+                'total_pages': 1,
+                'current_page': 1,
+                'has_next_page': False
+            })
+        else:
+            pagination = base_query.paginate(page=page, per_page=per_page, error_out=False)
+            videos_on_page = pagination.items
+            video_dtos = [v.to_dict() for v in videos_on_page]
+            return jsonify({
+                'articles': video_dtos,
+                'total_items': pagination.total,
+                'total_pages': pagination.pages,
+                'current_page': page,
+                'has_next_page': pagination.has_next
+            })
         
     except Exception as e:
         print(f"Error in /api/videos: {e}")
@@ -1001,8 +1066,10 @@ def get_all_videos():
         print(f"Error in /api/videos_all: {e}")
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/playlist/create', methods=['POST'])
-def create_playlist():
+
+## --- API: Smart Playlist Management ---
+@app.route('/api/playlist/smart/create', methods=['POST'])
+def create_smart_playlist():
     data = request.get_json()
     name = data.get('name')
     if not name:
@@ -1012,15 +1079,15 @@ def create_playlist():
     db.session.commit()
     return jsonify(new_playlist.to_dict()), 201
 
-@app.route('/api/playlist/<int:playlist_id>/delete', methods=['POST'])
-def delete_playlist(playlist_id):
+@app.route('/api/playlist/smart/<int:playlist_id>/delete', methods=['POST'])
+def delete_smart_playlist(playlist_id):
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     db.session.delete(playlist)
     db.session.commit()
     return jsonify({'success': True}), 200
 
-@app.route('/api/playlist/<int:playlist_id>/filter', methods=['POST'])
-def add_playlist_filter(playlist_id):
+@app.route('/api/playlist/smart/<int:playlist_id>/filter', methods=['POST'])
+def add_smart_playlist_filter(playlist_id):
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     new_filter = data.get('filter')
@@ -1057,8 +1124,8 @@ def add_playlist_filter(playlist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/playlist/<int:playlist_id>/rename', methods=['POST'])
-def rename_playlist(playlist_id):
+@app.route('/api/playlist/smart/<int:playlist_id>/rename', methods=['POST'])
+def rename_smart_playlist(playlist_id):
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     name = data.get('name')
@@ -1074,8 +1141,8 @@ def rename_playlist(playlist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/playlist/<int:playlist_id>/filter/remove', methods=['POST'])
-def remove_playlist_filter(playlist_id):
+@app.route('/api/playlist/smart/<int:playlist_id>/filter/remove', methods=['POST'])
+def remove_smart_playlist_filter(playlist_id):
     playlist = SmartPlaylist.query.get_or_404(playlist_id)
     data = request.get_json()
     filter_id_to_remove = data.get('filterId')
@@ -1094,6 +1161,98 @@ def remove_playlist_filter(playlist_id):
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
 
+
+## --- API: Standard Playlist Management ---
+@app.route('/api/playlist/standard/create', methods=['POST'])
+def create_standard_playlist():
+    data = request.get_json()
+    name = data.get('name', '').strip()
+    video_id_to_add = data.get('video_id', None)
+
+    if not name:
+        return jsonify({"error": "Playlist name is required"}), 400
+    
+    # Check if playlist with this name already exists
+    existing_playlist = StandardPlaylist.query.filter_by(name=name).first()
+    if existing_playlist:
+        return jsonify({"error": "A playlist with this name already exists."}), 409
+
+    try:
+        new_playlist = StandardPlaylist(name=name)
+        db.session.add(new_playlist)
+        db.session.commit() # Commit to get the new_playlist.id
+        
+        # If a video ID was provided, add it to this new playlist
+        if video_id_to_add:
+            video = Video.query.get(video_id_to_add)
+            if video:
+                new_item = PlaylistItem(playlist_id=new_playlist.id, video_id=video.id)
+                db.session.add(new_item)
+                db.session.commit()
+        
+        # Return all playlists so the frontend can update
+        all_playlists = StandardPlaylist.query.order_by(StandardPlaylist.name.asc()).all()
+        video_playlists = get_video_playlist_ids(video_id_to_add)
+        return jsonify([p.to_dict(video_playlists) for p in all_playlists]), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/playlist/toggle_video', methods=['POST'])
+def toggle_video_in_playlist():
+    data = request.get_json()
+    playlist_id = data.get('playlist_id')
+    video_id = data.get('video_id')
+
+    if not playlist_id or not video_id:
+        return jsonify({"error": "playlist_id and video_id are required"}), 400
+    
+    try:
+        # Check if the item already exists
+        item = PlaylistItem.query.filter_by(playlist_id=playlist_id, video_id=video_id).first()
+        
+        if item:
+            # It exists, so remove it
+            db.session.delete(item)
+            db.session.commit()
+        else:
+            # It doesn't exist, so add it
+            new_item = PlaylistItem(playlist_id=playlist_id, video_id=video_id)
+            db.session.add(new_item)
+            db.session.commit()
+        
+        # Return the updated list of playlists for this video
+        all_playlists = StandardPlaylist.query.order_by(StandardPlaylist.name.asc()).all()
+        video_playlists = get_video_playlist_ids(video_id)
+        return jsonify([p.to_dict(video_playlists) for p in all_playlists]), 200
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/video/<int:video_id>/playlists', methods=['GET'])
+def get_video_playlists(video_id):
+    """
+    Gets all standard playlists and marks which ones this video is in.
+    """
+    try:
+        all_playlists = StandardPlaylist.query.order_by(StandardPlaylist.name.asc()).all()
+        video_playlists = get_video_playlist_ids(video_id)
+        
+        return jsonify([p.to_dict(video_playlists) for p in all_playlists]), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def get_video_playlist_ids(video_id):
+    """Helper function to get a set of playlist IDs a video belongs to."""
+    if not video_id:
+        return set()
+    items = PlaylistItem.query.filter_by(video_id=video_id).all()
+    return {item.playlist_id for item in items}
+
+
+## --- API: Video/Thumbnail Serving ---
 @app.route('/api/video/<int:video_id>')
 def stream_video(video_id):
     """Streams the original video file."""
@@ -1162,6 +1321,7 @@ def get_subtitle(video_id):
     response.headers['Access-Control-Allow-Origin'] = '*'
     return response
 
+## --- API: Video Actions (Favorites/Watch Later/Progress) ---
 @app.route('/api/article/<int:article_id>/favorite', methods=['POST'])
 def toggle_favorite(article_id):
     video = Video.query.get_or_404(article_id)
@@ -1197,6 +1357,7 @@ def update_video_progress(video_id):
         'last_watched': video.last_watched.isoformat() if video.last_watched else None
     })
 
+## --- API: Background Tasks (Scan & Thumbnails) ---
 @app.route('/api/scan_videos', methods=['POST'])
 def scan_videos_route():
     """

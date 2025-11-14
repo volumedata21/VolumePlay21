@@ -18,18 +18,15 @@
         .yt-icon:hover {
             color: #FF0000 !important;
         }
-
         .aspect-box {
             position: relative;
             width: 100%;
             background-color: var(--bg-highlight);
             transition: padding-top 0.3s ease-in-out;
         }
-
         .aspect-16-9 {
             padding-top: 56.25%;
         }
-
         .aspect-9-16 {
             padding-top: 177.78%;
         }
@@ -37,8 +34,9 @@
 </head>
 
 <body class="bg-[var(--bg-darkest)] text-[var(--text-main)]" x-data="videoApp" x-init="init()"
-    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen }"
+    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen || isPlaylistModalOpen }"
     @save-filter.window="saveFilterToPlaylist($event.detail.playlistId, $event.detail.filter)">
+    
     <div x-show="isMobileMenuOpen" @click="isMobileMenuOpen = false"
         x-transition:enter="transition-opacity ease-in-out duration-300" x-transition:enter-start="opacity-0"
         x-transition:enter-end="opacity-100" x-transition:leave="transition-opacity ease-in-out duration-300"
@@ -85,35 +83,30 @@
                         class="material-icons" style="font-size:20px;">history</i> History</a>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
-
+                
                 <div class="pt-2" x-cloak>
                     <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
                     <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
-
                         <button x-show="filterHistory.length > 0" @click.prevent="goBackOneFilter()"
                             class="inline-flex items-center justify-center h-7 w-7 rounded-full text-[var(--text-main)] hover:text-[var(--text-bright)] hover:bg-[var(--bg-highlight)]/50 transition-colors"
                             title="Go back one step (Filter History)">
                             <span class="material-icons" style="font-size: 20px;">arrow_back</span>
                         </button>
-
                         <a href="#" @click.prevent="filterByFolderTag('clear_all')"
                             x-show="currentView.type === 'folder' && currentView.id"
                             class="inline-block text-sm font-medium text-[var(--text-main)] hover:text-white px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
                             style="background-color: #6B7280;" title="Clear Folder Filter">
                             Clear All
                         </a>
-
                         <template x-for="tag in getDynamicTags" :key="tag">
                             <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
                                 draggable="true"
                                 class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                x-text="tag.replace(/_/g, ' ')"
-                                :title="'Filter by: ' + tag.replace(/_/g, ' ') + ' (Drag to Playlist)'">
+                                x-text="tag.replace(/_/g, ' ')" :title="'Filter by: ' + tag.replace(/_/g, ' ') + ' (Drag to Playlist)'">
                             </a>
                         </template>
                         <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
-                            <p class="text-xs italic text-[var(--text-secondary)]">Tags only available for All
-                                Videos/Folders.</p>
+                            <p class="text-xs italic text-[var(--text-secondary)]">Tags only available for All Videos/Folders.</p>
                         </template>
                         <template
                             x-if="getDynamicTags.length === 0 && (currentView.type === 'all' || currentView.type === 'folder')">
@@ -122,18 +115,17 @@
                     </div>
                 </div>
 
+                <!-- NEW: Standard Playlists Section -->
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
                     <div class="flex items-center justify-between px-3 mb-1">
-                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Playlists</h3>
                     </div>
-
                     <div class="flex items-center gap-1 px-3 mb-2">
                         <input type="text" x-model="newPlaylistName"
-                            @keydown.enter="createPlaylist(newPlaylistName); newPlaylistName=''"
-                            placeholder="Enter playlist name..."
+                            @keydown.enter="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
+                            placeholder="Create new playlist..."
                             class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
-
-                        <button @click="createPlaylist(newPlaylistName); newPlaylistName=''"
+                        <button @click="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
                             :disabled="newPlaylistName.trim() === ''"
                             class="p-1 text-[var(--text-secondary)] transition-colors"
                             :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
@@ -141,7 +133,40 @@
                             <i class="material-icons" style="font-size: 20px;">add</i>
                         </button>
                     </div>
+                    <div class="mt-1 space-y-1">
+                        <template x-for="playlist in appData.standardPlaylists" :key="playlist.id">
+                            <a href="#" @click.prevent="setView('standard_playlist', playlist.id)"
+                                class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
+                                :class="currentView.type === 'standard_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
+                                <i class="material-icons" style="font-size:20px;">queue_music</i>
+                                <span class="truncate flex-1" x-text="playlist.name"></span>
+                            </a>
+                        </template>
+                        <p x-show="appData.standardPlaylists.length === 0"
+                            class="px-3 text-xs italic text-[var(--text-secondary)]">Create a playlist above.</p>
+                    </div>
+                </div>
+                <!-- END NEW -->
 
+                <hr class="border-[var(--divider-color)] mx-4 my-2">
+
+                <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
+                    <div class="flex items-center justify-between px-3 mb-1">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
+                    </div>
+                    <div class="flex items-center gap-1 px-3 mb-2">
+                        <input type="text" x-model="newPlaylistName"
+                            @keydown.enter="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
+                            placeholder="Create smart playlist..."
+                            class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
+                        <button @click="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
+                            :disabled="newPlaylistName.trim() === ''"
+                            class="p-1 text-[var(--text-secondary)] transition-colors"
+                            :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
+                            title="Create New Smart Playlist">
+                            <i class="material-icons" style="font-size: 20px;">add</i>
+                        </button>
+                    </div>
                     <div class="mt-1 space-y-1">
                         <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
                             <div x-data="{ showActions: false, hoverTimer: null, isEditingFilters: false }"
@@ -164,19 +189,17 @@
 
                                     <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 transition-opacity duration-300 pointer-events-none"
                                         :class="showActions ? 'opacity-100 pointer-events-auto' : 'opacity-0'">
-
                                         <button @click.stop.prevent="isEditingFilters = true; showActions = false"
                                             class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
                                             title="Add Filter Criteria" :tabindex="showActions ? 0 : -1">
                                             <i class="material-icons" style="font-size: 18px;">filter_alt</i>
                                         </button>
-
-                                        <button @click.stop.prevent="renamePlaylist(playlist)"
+                                        <button @click.stop.prevent="renameSmartPlaylist(playlist)"
                                             class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
                                             title="Rename Playlist" :tabindex="showActions ? 0 : -1">
                                             <i class="material-icons" style="font-size: 18px;">edit</i>
                                         </button>
-                                        <button @click.stop.prevent="deletePlaylist(playlist.id)"
+                                        <button @click.stop.prevent="deleteSmartPlaylist(playlist.id)"
                                             class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
                                             title="Delete Playlist" :tabindex="showActions ? 0 : -1">
                                             <i class="material-icons" style="font-size: 18px;">delete</i>
@@ -186,65 +209,49 @@
 
                                 <div x-show="isEditingFilters" x-data="filterEditor(playlist.id, appData)"
                                     @click.outside="isEditingFilters = false"
-                                    x-transition:enter="transition ease-out duration-150"
-                                    x-transition:enter-start="opacity-0 translate-y-[-5px]"
-                                    x-transition:enter-end="opacity-100 translate-y-0"
-                                    x-transition:leave="transition ease-in duration-100"
-                                    x-transition:leave-start="opacity-100 translate-y-0"
-                                    x-transition:leave-end="opacity-0 translate-y-[-5px]"
+                                    x-transition
                                     class="p-3 mt-1 space-y-3 border border-[var(--highlight-ring)]/50 rounded-md bg-[var(--bg-darkest)] shadow-xl"
                                     x-cloak>
-
                                     <div class="flex items-center justify-between">
-                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Filter
-                                        </h4>
+                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Filter</h4>
                                         <button @click.stop="isEditingFilters = false"
                                             class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500"
                                             title="Close">
                                             <i class="material-icons" style="font-size: 18px;">close</i>
                                         </button>
                                     </div>
-
                                     <div>
-                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter
-                                            Type</label>
+                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter Type</label>
                                         <select x-model="selectedType" @change="resetValues()"
                                             class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
                                             <option value="title">Title</option>
                                             <option value="author">Author / Channel</option>
                                         </select>
                                     </div>
-
                                     <template x-if="selectedType === 'title'">
-                                        <div class="space-y-2">
-                                            <div>
-                                                <label class="block text-xs text-[var(--text-secondary)] mb-1">
-                                                    Search Text (Use quotes for exact phrase match)
-                                                </label>
-                                                <input type="text" x-model="textValue"
-                                                    @keydown.enter.prevent="applyFilter()"
-                                                    class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
-                                                    placeholder="e.g. 'time' or 'space exploration'">
-                                            </div>
+                                        <div>
+                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
+                                                Search Text (Use quotes for exact phrase match)
+                                            </label>
+                                            <input type="text" x-model="textValue"
+                                                @keydown.enter.prevent="applyFilter()"
+                                                class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
+                                                placeholder="e.g. 'time' or 'space exploration'">
                                         </div>
                                     </template>
-
                                     <template x-if="selectedType === 'author'">
-                                        <div class="space-y-2">
-                                            <div>
-                                                <label class="block text-xs text-[var(--text-secondary)] mb-1">
-                                                    Select Authors (Hold Ctrl/Cmd to select multiple)
-                                                </label>
-                                                <select multiple x-model="selectedAuthors"
-                                                    class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
-                                                    <template x-for="author in allAuthors" :key="author">
-                                                        <option :value="author" x-text="author"></option>
-                                                    </template>
-                                                </select>
-                                            </div>
+                                        <div>
+                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
+                                                Select Authors (Hold Ctrl/Cmd to select multiple)
+                                            </label>
+                                            <select multiple x-model="selectedAuthors"
+                                                class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                                <template x-for="author in allAuthors" :key="author">
+                                                    <option :value="author" x-text="author"></option>
+                                                </template>
+                                            </select>
                                         </div>
                                     </template>
-
                                     <button @click="applyFilter()" :disabled="!isFilterValid()"
                                         class="w-full rounded-md bg-[var(--text-highlight)] disabled:bg-opacity-50 px-3 py-1.5 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80 transition-colors">
                                         Apply Filter
@@ -253,27 +260,20 @@
 
                                 <template
                                     x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.filters && playlist.filters.length > 0">
-                                    <div
-                                        class="flex flex-wrap gap-1.5 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
-                                        <span
-                                            class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1 self-center">Filters:</span>
-
+                                    <div class="flex flex-wrap gap-1.5 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
+                                        <span class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1 self-center">Filters:</span>
                                         <template x-for="filter in playlist.filters" :key="filter.id">
-                                            <span
-                                                class="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 px-2 py-0.5 rounded-full"
-                                                style="background-color: #233b4b;">
+                                            <span class="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 px-2 py-0.5 rounded-full" style="background-color: #233b4b;">
                                                 <span>
                                                     <span class="font-semibold" x-text="filter.label + ': '"></span>
                                                     <template x-if="typeof filter.value === 'string'">
-                                                        <span class="italic"
-                                                            x-text="'&quot;' + filter.value + '&quot;'"></span>
+                                                        <span class="italic" x-text="'&quot;' + filter.value + '&quot;'"></span>
                                                     </template>
                                                     <template x-if="Array.isArray(filter.value)">
                                                         <span class="italic" x-text="filter.value.join(', ')"></span>
                                                     </template>
                                                 </span>
-                                                <button
-                                                    @click.prevent="removeFilterFromPlaylist(playlist.id, filter.id)"
+                                                <button @click.prevent="removeFilterFromPlaylist(playlist.id, filter.id)"
                                                     class="p-0.5 -m-0.5 text-cyan-400 hover:text-red-500 rounded-full transition-colors">
                                                     <i class="material-icons" style="font-size: 14px;">close</i>
                                                 </button>
@@ -282,12 +282,9 @@
                                     </div>
                                 </template>
 
-                                <template
-                                    x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.tags.length > 0">
-                                    <div
-                                        class="flex flex-wrap gap-1 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
-                                        <span
-                                            class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1">Tags:</span>
+                                <template x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.tags.length > 0">
+                                    <div class="flex flex-wrap gap-1 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
+                                        <span class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1">Tags:</span>
                                         <template x-for="tag in playlist.tags" :key="tag">
                                             <a href="#" @click.prevent="removeTagFromPlaylist(playlist.id, tag)"
                                                 class="inline-block text-xs font-medium text-white px-1.5 py-0.5 rounded-full cursor-pointer transition-colors duration-150 group-hover:bg-red-500/50"
@@ -300,7 +297,7 @@
                             </div>
                         </template>
                         <p x-show="appData.smartPlaylists.length === 0"
-                            class="px-3 text-xs italic text-[var(--text-secondary)]">Start by entering a name above.</p>
+                            class="px-3 text-xs italic text-[var(--text-secondary)]">Create a smart playlist above.</p>
                     </div>
                 </div>
 
@@ -308,7 +305,6 @@
 
                 <div class="pt-2 px-4 pb-2 space-y-2" x-cloak>
                     <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Global Filters</h3>
-
                     <button @click="cycleShortsFilter()"
                         class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                         <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
@@ -317,7 +313,6 @@
                            }">ondemand_video</i>
                         <span>Shorts</span>
                     </button>
-
                     <button @click="cycleVRFilter()"
                         class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                         <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
@@ -326,7 +321,6 @@
                            }">view_in_ar</i>
                         <span>3D / VR</span>
                     </button>
-
                     <button @click="cycleOptimizedFilter()"
                         class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                         <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
@@ -338,35 +332,31 @@
                 </div>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
-
+                
                 <div class="pt-2 px-4 pb-4 space-y-2" x-cloak>
                     <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Library Tools</h3>
-
+                    
                     <button @click="scanNewVideos()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;"
-                            :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
+                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
                         <span x-text="scanType === 'new' ? 'Scanning New...' : 'Scan New Videos'"></span>
                     </button>
 
                     <button @click="generateMissingThumbnails()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;"
-                            :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
+                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
                         <span x-text="isGeneratingThumbnails ? libraryTaskButtonText : 'Gen. Missing Thumbs'"></span>
                     </button>
 
                     <button @click="cleanupLibrary()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;"
-                            :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
+                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
                         <span x-text="isCleaningUp ? 'Pruning...' : 'Prune Library'"></span>
                     </button>
-
+                    
                     <button @click="scanFullLibrary()" :disabled="isAnyTaskRunning()"
                         class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;"
-                            :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
+                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
                         <span x-text="scanType === 'full' ? 'Scanning All...' : 'Scan Entire Library'"></span>
                     </button>
                 </div>
@@ -462,20 +452,16 @@
                             <template x-if="video.image_url">
                                 <div class="aspect-box"
                                     :class="{ 'aspect-16-9': currentView.type !== 'shorts', 'aspect-9-16': currentView.type === 'shorts' }">
-
                                     <img class="absolute top-0 left-0 w-full h-full object-cover blur-lg scale-110 brightness-75"
                                         :src="video.image_url" alt="" @error="$event.target.style.display='none'">
-
                                     <img class="absolute top-0 left-0 w-full h-full" :class="{
                                             'object-contain': currentView.type !== 'shorts',
                                             'object-cover': currentView.type === 'shorts'
                                        }" :src="video.image_url" alt=""
                                         @error="$event.target.style.display='none'; $event.target.nextElementSibling.style.display='flex'">
-
                                     <div
                                         class="no-thumb-text hidden absolute top-0 left-0 w-full h-full items-center justify-center text-[var(--text-secondary)]">
                                         (Image failed)</div>
-
                                     <div x-show="video.duration > 0"
                                         class="absolute top-2 right-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
                                         <span x-text="formatDuration(video.duration)"></span>
@@ -504,14 +490,11 @@
 
                         <div
                             class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5 bg-[#182030]">
-
                             <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
-
                                 <div class="flex items-center">
                                     <a href="#" @click.prevent="setView('author', null, video.author)"
                                         class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors truncate flex-shrink"
                                         x-text="video.author"></a>
-
                                     <template x-if="video.is_short">
                                         <a href="#"
                                             @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
@@ -534,7 +517,6 @@
                                             Optimized
                                         </a>
                                     </template>
-
                                     <template
                                         x-if="video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB'">
                                         <a href="#"
@@ -559,11 +541,9 @@
                                         </a>
                                     </template>
                                 </div>
-
                                 <span class="block truncate text-xs mt-1 ml-2"
                                     x-text="formatDateAgo(video.published, video.uploaded)"></span>
                             </div>
-
                             <div class="flex shrink-0 items-center gap-0">
                                 <button class="p-1" @click.prevent="toggleFavorite(video)"
                                     :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
@@ -574,20 +554,19 @@
                                         class="material-icons" style="font-size: 20px;"
                                         x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
                             </div>
-
                         </div>
                     </div>
                 </template>
             </div>
 
             <div class="pb-8 text-center"
-                x-show="!isLoading && (currentPage <= totalPages) && currentView.type !== 'smart_playlist'" x-cloak>
+                x-show="!isLoading && (currentPage <= totalPages) && currentView.type !== 'smart_playlist' && currentView.type !== 'standard_playlist'" x-cloak>
                 <p class="mb-2 text-xs text-[var(--text-secondary)]">
                     Showing <span x-text="appData.videos.length"></span> of <span x-text="totalItems"></span> videos
                 </p>
                 <button @click="loadMoreVideos()"
                     class="rounded-md bg-[var(--bg-highlight)] px-5 py-2.5 text-sm font-medium text-[var(--text-bright)] hover:bg-[var(--bg-highlight-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--highlight-ring)] focus:ring-opacity-50">
-                    Load More (60)
+                    Load More (30)
                 </button>
             </div>
 
@@ -598,6 +577,7 @@
         </main>
     </div>
 
+    <!-- Main Video Modal -->
     <div x-show="isModalOpen" @keydown.escape.window="closeModal()"
         class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80 p-4 pt-12 sm:p-8" x-cloak>
         <div class="fixed inset-0" @click="closeModal()" x-transition:enter="ease-out duration-300"
@@ -626,7 +606,6 @@
                                 class="w-full max-h-[80vh] h-auto relative z-10" :src="currentVideoSrc" controls
                                 autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous"
                                 @enterpictureinpicture="handleEnterPiP()" @leavepictureinpicture="handleLeavePiP()">
-
                                 <template x-if="modalVideo.subtitle_url">
                                     <track :label="modalVideo.subtitle_label" kind="subtitles"
                                         :src="modalVideo.subtitle_url" :srclang="modalVideo.subtitle_lang">
@@ -642,7 +621,6 @@
                     <div class="p-4 sm:p-5">
                         <div class="lg:flex lg:gap-x-8">
                             <div class="lg:w-2/3">
-
                                 <div class="flex items-center gap-3">
                                     <template x-if="modalVideo.show_poster_url">
                                         <img :src="modalVideo.show_poster_url" alt="Show Poster"
@@ -711,17 +689,15 @@
                                             <i class="material-icons" style="font-size: 20px;"
                                                 x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
                                         </button>
+                                        <button @click.prevent="openPlaylistModal(modalVideo.id)" title="Add to Playlist"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">playlist_add</i>
+                                        </button>
                                         <a :href="modalVideo.video_url" :download="modalVideo.filename"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                             title="Download original file">
                                             <i class="material-icons" style="font-size: 20px;">download</i>
                                         </a>
-                                        <button
-                                            @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Scroll to file details">
-                                            <i class="material-icons" style="font-size: 20px;">info</i>
-                                        </button>
                                     </div>
 
                                     <div class="grid grid-cols-2 gap-2">
@@ -731,12 +707,18 @@
                                             <i class="material-icons" style="font-size: 20px;">speed</i>
                                             <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                         </button>
+                                        <button
+                                            @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                            title="Scroll to file details">
+                                            <i class="material-icons" style="font-size: 20px;">info</i>
+                                            <span>More Info</span>
+                                        </button>
 
                                         <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
                                             <button @click.prevent="createCustomThumb()"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons"
-                                                    style="font-size: 20px;">add_photo_alternate</i>
+                                                <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
                                                 <span>Create Thumb</span>
                                             </button>
                                         </template>
@@ -748,13 +730,12 @@
                                             </button>
                                         </template>
                                         <template x-if="isCreatingThumb">
-                                            <button disabled
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                                 <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
                                                 <span>Working...</span>
                                             </button>
                                         </template>
-
+                                        
                                         <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                             <button @click.prevent="startTranscode(modalVideo)"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -762,23 +743,18 @@
                                                 <span>Optimize</span>
                                             </button>
                                         </template>
-                                        <!-- Show 'Optimizing...' button -->
                                         <template x-if="isCurrentlyTranscoding(modalVideo.id)">
-                                            <button disabled
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                                 <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
                                                 <span>Optimizing...</span>
                                             </button>
                                         </template>
-                                        <!-- Show 'Queued' button -->
                                         <template x-if="isQueued(modalVideo.id)">
-                                            <button disabled
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                                 <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
                                                 <span>Queued</span>
                                             </button>
                                         </template>
-                                        <!-- Show 'Remove Optimized' button -->
                                         <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                             <button @click.prevent="deleteTranscode(modalVideo)"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -786,23 +762,15 @@
                                                 <span>Remove Optimized</span>
                                             </button>
                                         </template>
-                                        <template x-if="modalVideo.has_transcode && !isTranscoding">
-                                            <button @click.prevent="deleteTranscode(modalVideo)"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                                <span>Remove Optimized</span>
-                                            </button>
-                                        </template>
+
                                         <template x-if="modalVideo.has_transcode">
                                             <a :href="modalVideo.transcode_download_url"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                                 title="Download optimized MP4">
-                                                <i class="material-icons"
-                                                    style="font-size: 20px;">download_for_offline</i>
+                                                <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
                                                 <span>Optimized</span>
                                             </a>
                                         </template>
-
                                         <template x-if="modalVideo.youtube_id">
                                             <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
                                                 target="_blank"
@@ -812,7 +780,6 @@
                                                 <span>YouTube</span>
                                             </a>
                                         </template>
-
                                         <button @click.prevent="cycleVideoTag(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                             <i class="material-icons" style="font-size: 20px;"
@@ -843,8 +810,7 @@
                                         </div>
                                         <div class="grid grid-cols-5 gap-x-4">
                                             <div>
-                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">File Size
-                                                </h4>
+                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">File Size</h4>
                                                 <p class="!mt-0.5" x-text="formatFileSize(modalVideo.file_size)"></p>
                                             </div>
                                             <div>
@@ -852,14 +818,12 @@
                                                 <p class="!mt-0.5" x-text="modalVideo.file_format"></p>
                                             </div>
                                             <div>
-                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions
-                                                </h4>
+                                                <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Dimensions</h4>
                                                 <p class="!mt-0.5" x-text="modalVideo.dimensions || 'Unknown'"></p>
                                             </div>
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Length</h4>
-                                                <p class="!mt-0.5"
-                                                    x-text="formatDuration(modalVideo.duration) || 'N/A'"></p>
+                                                <p class="!mt-0.5" x-text="formatDuration(modalVideo.duration) || 'N/A'"></p>
                                             </div>
                                             <div>
                                                 <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Codec</h4>
@@ -867,32 +831,27 @@
                                             </div>
                                         </div>
                                         <div>
-                                            <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files
-                                            </h4>
+                                            <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files</h4>
                                             <div class="!mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
                                                 <span class="inline-flex items-center gap-1">
-                                                    <i class="material-icons text-[var(--text-highlight)]"
-                                                        style="font-size: 16px;">videocam</i>
+                                                    <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">videocam</i>
                                                     <span x-text="modalVideo.file_format"></span>
                                                 </span>
                                                 <template x-if="modalVideo.has_subtitle">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]"
-                                                            style="font-size: 16px;">subtitles</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">subtitles</i>
                                                         <span>SRT</span>
                                                     </span>
                                                 </template>
                                                 <template x-if="modalVideo.has_thumbnail">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]"
-                                                            style="font-size: 16px;">image</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">image</i>
                                                         <span>JPG</span>
                                                     </span>
                                                 </template>
                                                 <template x-if="modalVideo.has_nfo">
                                                     <span class="inline-flex items-center gap-1">
-                                                        <i class="material-icons text-[var(--text-highlight)]"
-                                                            style="font-size: 16px;">description</i>
+                                                        <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">description</i>
                                                         <span>NFO</span>
                                                     </span>
                                                 </template>
@@ -944,17 +903,15 @@
                                         <i class="material-icons" style="font-size: 20px;"
                                             x-text="modalVideo.is_favorite ? 'star' : 'star_border'"></i>
                                     </button>
+                                    <button @click.prevent="openPlaylistModal(modalVideo.id)" title="Add to Playlist"
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <i class="material-icons" style="font-size: 20px;">playlist_add</i>
+                                    </button>
                                     <a :href="modalVideo.video_url" :download="modalVideo.filename"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
                                         title="Download original file">
                                         <i class="material-icons" style="font-size: 20px;">download</i>
                                     </a>
-                                    <button
-                                        @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        title="Scroll to file details">
-                                        <i class="material-icons" style="font-size: 20px;">info</i>
-                                    </button>
                                 </div>
 
                                 <div class="grid grid-cols-2 gap-2">
@@ -964,8 +921,35 @@
                                         <i class="material-icons" style="font-size: 20px;">speed</i>
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
+                                    <button
+                                        @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
+                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                        title="Scroll to file details">
+                                        <i class="material-icons" style="font-size: 20px;">info</i>
+                                        <span>More Info</span>
+                                    </button>
 
-                                    <!-- Show 'Optimize' button -->
+                                    <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                        <button @click.prevent="createCustomThumb()"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                            <span>Create Thumb</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                        <button @click.prevent="deleteCustomThumb()"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                            <span>Remove Thumb</span>
+                                        </button>
+                                    </template>
+                                    <template x-if="isCreatingThumb">
+                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                            <span>Working...</span>
+                                        </button>
+                                    </template>
+                                    
                                     <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                         <button @click.prevent="startTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -973,23 +957,18 @@
                                             <span>Optimize</span>
                                         </button>
                                     </template>
-                                    <!-- Show 'Optimizing...' button -->
                                     <template x-if="isCurrentlyTranscoding(modalVideo.id)">
-                                        <button disabled
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                             <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
                                             <span>Optimizing...</span>
                                         </button>
                                     </template>
-                                    <!-- Show 'Queued' button -->
                                     <template x-if="isQueued(modalVideo.id)">
-                                        <button disabled
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
+                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
                                             <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
                                             <span>Queued</span>
                                         </button>
                                     </template>
-                                    <!-- Show 'Remove Optimized' button -->
                                     <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
                                         <button @click.prevent="deleteTranscode(modalVideo)"
                                             class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -997,7 +976,15 @@
                                             <span>Remove Optimized</span>
                                         </button>
                                     </template>
-
+                                    
+                                    <template x-if="modalVideo.has_transcode">
+                                        <a :href="modalVideo.transcode_download_url"
+                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
+                                            title="Download optimized MP4">
+                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                            <span>Optimized</span>
+                                        </a>
+                                    </template>
                                     <template x-if="modalVideo.youtube_id">
                                         <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
                                             target="_blank"
@@ -1007,7 +994,6 @@
                                             <span>YouTube</span>
                                         </a>
                                     </template>
-
                                     <button @click.prevent="cycleVideoTag(modalVideo)"
                                         class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                         <i class="material-icons" style="font-size: 20px;"
@@ -1022,6 +1008,66 @@
             </template>
         </div>
     </div>
-</body>
 
+    <!-- NEW: Add to Playlist Modal -->
+    <div x-show="isPlaylistModalOpen" @keydown.escape.window="isPlaylistModalOpen = false"
+        class="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4" x-cloak>
+        
+        <div class="fixed inset-0" @click="isPlaylistModalOpen = false" x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+            x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"></div>
+
+        <div class="relative z-10 w-full max-w-md overflow-hidden rounded-lg bg-[#111827] shadow-xl"
+            x-show="isPlaylistModalOpen" 
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" 
+            x-transition:leave="ease-in duration-200"
+            x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+            x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            @click.outside="isPlaylistModalOpen = false">
+            
+            <div class="flex items-center justify-between p-4 border-b border-[var(--divider-color)]">
+                <h3 class="text-lg font-semibold text-[var(--text-bright)]">Add to Playlist</h3>
+                <button @click="isPlaylistModalOpen = false" class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500" title="Close">
+                    <i class="material-icons" style="font-size: 20px;">close</i>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-3" x-data="{ newPlaylistName: '' }">
+                <div class="flex items-center gap-2">
+                    <input type="text" x-model="newPlaylistName"
+                        @keydown.enter="createStandardPlaylist(newPlaylistName, modalVideo.id); newPlaylistName=''"
+                        placeholder="Create new playlist..."
+                        class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
+                    <button @click="createStandardPlaylist(newPlaylistName, modalVideo.id); newPlaylistName=''"
+                        :disabled="newPlaylistName.trim() === ''"
+                        class="p-1 text-[var(--text-secondary)] transition-colors"
+                        :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
+                        title="Create and Add">
+                        <i class="material-icons" style="font-size: 20px;">add</i>
+                    </button>
+                </div>
+
+                <div class="border-t border-[var(--divider-color)]"></div>
+
+                <div class="max-h-60 overflow-y-auto space-y-2 pr-2">
+                    <template x-for="playlist in appData.standardPlaylists" :key="playlist.id">
+                        <label class="flex items-center gap-3 p-2 rounded-md hover:bg-[var(--bg-highlight)]/50 cursor-pointer">
+                            <input type="checkbox" 
+                                class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)]"
+                                :checked="playlist.is_in_playlist"
+                                @change="toggleVideoInPlaylist(playlist.id, modalVideo.id)">
+                            <span class="text-sm font-medium text-[var(--text-main)]" x-text="playlist.name"></span>
+                        </label>
+                    </template>
+                     <p x-show="appData.standardPlaylists.length === 0"
+                        class="px-3 py-2 text-sm italic text-[var(--text-secondary)]">No playlists created yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</body>
 </html>
