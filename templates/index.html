@@ -34,8 +34,8 @@
 </head>
 
 <body class="bg-[var(--bg-darkest)] text-[var(--text-main)]" x-data="videoApp" x-init="init()"
-    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen || isPlaylistModalOpen }"
-    @save-filter.window="saveFilterToPlaylist($event.detail.playlistId, $event.detail.filter)">
+    :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen || isPlaylistModalOpen || isSmartPlaylistModalOpen }"
+    @save-smart-playlist-filters.window="saveSmartPlaylistSettings($event.detail)">
     
     <div x-show="isMobileMenuOpen" @click="isMobileMenuOpen = false"
         x-transition:enter="transition-opacity ease-in-out duration-300" x-transition:enter-start="opacity-0"
@@ -115,7 +115,6 @@
                     </div>
                 </div>
 
-                <!-- NEW: Standard Playlists Section -->
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
                     <div class="flex items-center justify-between px-3 mb-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Playlists</h3>
@@ -146,7 +145,6 @@
                             class="px-3 text-xs italic text-[var(--text-secondary)]">Create a playlist above.</p>
                     </div>
                 </div>
-                <!-- END NEW -->
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
@@ -169,131 +167,30 @@
                     </div>
                     <div class="mt-1 space-y-1">
                         <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
-                            <div x-data="{ showActions: false, hoverTimer: null, isEditingFilters: false }"
-                                @mouseenter="clearTimeout(hoverTimer); hoverTimer = setTimeout(() => { showActions = true }, 1000)"
-                                @mouseleave="clearTimeout(hoverTimer); showActions = false; isEditingFilters = false"
-                                class="relative" @dragover.prevent @drop="handlePlaylistDrop(playlist.id, $event)">
-
+                            <div class="relative group">
                                 <a href="#" @click.prevent="setView('smart_playlist', playlist.id)"
-                                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50 relative"
+                                    class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
                                     :class="currentView.type === 'smart_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
-
                                     <i class="material-icons" style="font-size:20px;">playlist_play</i>
                                     <span class="truncate flex-1" x-text="playlist.name"></span>
-                                    <span
-                                        class="text-xs text-[var(--text-secondary)]/70 transition-opacity duration-300"
-                                        :class="{ 'opacity-0': showActions, 'invisible': showActions }"
-                                        x-show="playlist.tags.length > 0 && !showActions">
-                                        <span x-text="playlist.tags.length"></span>
-                                    </span>
-
-                                    <div class="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 transition-opacity duration-300 pointer-events-none"
-                                        :class="showActions ? 'opacity-100 pointer-events-auto' : 'opacity-0'">
-                                        <button @click.stop.prevent="isEditingFilters = true; showActions = false"
-                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
-                                            title="Add Filter Criteria" :tabindex="showActions ? 0 : -1">
-                                            <i class="material-icons" style="font-size: 18px;">filter_alt</i>
-                                        </button>
-                                        <button @click.stop.prevent="renameSmartPlaylist(playlist)"
-                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
-                                            title="Rename Playlist" :tabindex="showActions ? 0 : -1">
-                                            <i class="material-icons" style="font-size: 18px;">edit</i>
-                                        </button>
-                                        <button @click.stop.prevent="deleteSmartPlaylist(playlist.id)"
-                                            class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
-                                            title="Delete Playlist" :tabindex="showActions ? 0 : -1">
-                                            <i class="material-icons" style="font-size: 18px;">delete</i>
-                                        </button>
-                                    </div>
                                 </a>
-
-                                <div x-show="isEditingFilters" x-data="filterEditor(playlist.id, appData)"
-                                    @click.outside="isEditingFilters = false"
-                                    x-transition
-                                    class="p-3 mt-1 space-y-3 border border-[var(--highlight-ring)]/50 rounded-md bg-[var(--bg-darkest)] shadow-xl"
-                                    x-cloak>
-                                    <div class="flex items-center justify-between">
-                                        <h4 class="text-sm font-semibold text-[var(--text-highlight)]">Add Filter</h4>
-                                        <button @click.stop="isEditingFilters = false"
-                                            class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500"
-                                            title="Close">
-                                            <i class="material-icons" style="font-size: 18px;">close</i>
-                                        </button>
-                                    </div>
-                                    <div>
-                                        <label class="block text-xs text-[var(--text-secondary)] mb-1">Filter Type</label>
-                                        <select x-model="selectedType" @change="resetValues()"
-                                            class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
-                                            <option value="title">Title</option>
-                                            <option value="author">Author / Channel</option>
-                                        </select>
-                                    </div>
-                                    <template x-if="selectedType === 'title'">
-                                        <div>
-                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
-                                                Search Text (Use quotes for exact phrase match)
-                                            </label>
-                                            <input type="text" x-model="textValue"
-                                                @keydown.enter.prevent="applyFilter()"
-                                                class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5"
-                                                placeholder="e.g. 'time' or 'space exploration'">
-                                        </div>
-                                    </template>
-                                    <template x-if="selectedType === 'author'">
-                                        <div>
-                                            <label class="block text-xs text-[var(--text-secondary)] mb-1">
-                                                Select Authors (Hold Ctrl/Cmd to select multiple)
-                                            </label>
-                                            <select multiple x-model="selectedAuthors"
-                                                class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
-                                                <template x-for="author in allAuthors" :key="author">
-                                                    <option :value="author" x-text="author"></option>
-                                                </template>
-                                            </select>
-                                        </div>
-                                    </template>
-                                    <button @click="applyFilter()" :disabled="!isFilterValid()"
-                                        class="w-full rounded-md bg-[var(--text-highlight)] disabled:bg-opacity-50 px-3 py-1.5 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80 transition-colors">
-                                        Apply Filter
+                                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                    <button @click.stop.prevent="openSmartPlaylistSettings(playlist)"
+                                        class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
+                                        title="Smart Playlist Settings">
+                                        <i class="material-icons" style="font-size: 18px;">settings</i>
+                                    </button>
+                                    <button @click.stop.prevent="renameSmartPlaylist(playlist)"
+                                        class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
+                                        title="Rename Playlist">
+                                        <i class="material-icons" style="font-size: 18px;">edit</i>
+                                    </button>
+                                    <button @click.stop.prevent="deleteSmartPlaylist(playlist.id)"
+                                        class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
+                                        title="Delete Playlist">
+                                        <i class="material-icons" style="font-size: 18px;">delete</i>
                                     </button>
                                 </div>
-
-                                <template
-                                    x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.filters && playlist.filters.length > 0">
-                                    <div class="flex flex-wrap gap-1.5 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
-                                        <span class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1 self-center">Filters:</span>
-                                        <template x-for="filter in playlist.filters" :key="filter.id">
-                                            <span class="inline-flex items-center gap-1.5 text-xs font-medium text-cyan-200 px-2 py-0.5 rounded-full" style="background-color: #233b4b;">
-                                                <span>
-                                                    <span class="font-semibold" x-text="filter.label + ': '"></span>
-                                                    <template x-if="typeof filter.value === 'string'">
-                                                        <span class="italic" x-text="'&quot;' + filter.value + '&quot;'"></span>
-                                                    </template>
-                                                    <template x-if="Array.isArray(filter.value)">
-                                                        <span class="italic" x-text="filter.value.join(', ')"></span>
-                                                    </template>
-                                                </span>
-                                                <button @click.prevent="removeFilterFromPlaylist(playlist.id, filter.id)"
-                                                    class="p-0.5 -m-0.5 text-cyan-400 hover:text-red-500 rounded-full transition-colors">
-                                                    <i class="material-icons" style="font-size: 14px;">close</i>
-                                                </button>
-                                            </span>
-                                        </template>
-                                    </div>
-                                </template>
-
-                                <template x-if="currentView.type === 'smart_playlist' && currentView.id === playlist.id && playlist.tags.length > 0">
-                                    <div class="flex flex-wrap gap-1 px-3 py-2 border-t border-[var(--divider-color)] bg-[var(--bg-darkest)]">
-                                        <span class="text-xs font-semibold uppercase text-[var(--text-secondary)] mr-1">Tags:</span>
-                                        <template x-for="tag in playlist.tags" :key="tag">
-                                            <a href="#" @click.prevent="removeTagFromPlaylist(playlist.id, tag)"
-                                                class="inline-block text-xs font-medium text-white px-1.5 py-0.5 rounded-full cursor-pointer transition-colors duration-150 group-hover:bg-red-500/50"
-                                                style="background-color: #233b4b;" x-text="tag"
-                                                title="Click to remove tag from playlist">
-                                            </a>
-                                        </template>
-                                    </div>
-                                </template>
                             </div>
                         </template>
                         <p x-show="appData.smartPlaylists.length === 0"
@@ -762,7 +659,7 @@
                                                 <span>Remove Optimized</span>
                                             </button>
                                         </template>
-
+                                        
                                         <template x-if="modalVideo.has_transcode">
                                             <a :href="modalVideo.transcode_download_url"
                                                 class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
@@ -1009,7 +906,7 @@
         </div>
     </div>
 
-    <!-- NEW: Add to Playlist Modal -->
+    <!-- Add to Playlist Modal -->
     <div x-show="isPlaylistModalOpen" @keydown.escape.window="isPlaylistModalOpen = false"
         class="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4" x-cloak>
         
@@ -1066,6 +963,115 @@
                         class="px-3 py-2 text-sm italic text-[var(--text-secondary)]">No playlists created yet.</p>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Smart Playlist Settings Modal -->
+    <div x-show="isSmartPlaylistModalOpen" @keydown.escape.window="closeSmartPlaylistSettings()"
+        class="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4" x-cloak>
+        
+        <div class="fixed inset-0" @click="closeSmartPlaylistSettings()" x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+            x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100"
+            x-transition:leave-end="opacity-0"></div>
+
+        <div class="relative z-10 w-full max-w-2xl overflow-hidden rounded-lg bg-[#111827] shadow-xl"
+            x-show="isSmartPlaylistModalOpen" 
+            x-transition:enter="ease-out duration-300"
+            x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" 
+            x-transition:leave="ease-in duration-200"
+            x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
+            x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
+            @click.outside="closeSmartPlaylistSettings()">
+            
+            <template x-if="currentSmartPlaylist">
+                <div x-data="smartPlaylistEditor(currentSmartPlaylist, allAuthorsForFilter)">
+                    <div class="flex items-center justify-between p-4 border-b border-[var(--divider-color)]">
+                        <h3 class="text-lg font-semibold text-[var(--text-bright)]">
+                            Smart Playlist: <span x-text="currentSmartPlaylist.name"></span>
+                        </h3>
+                        <button @click="closeSmartPlaylistSettings()" class="p-1 -m-1 text-[var(--text-secondary)] hover:text-red-500" title="Close">
+                            <i class="material-icons" style="font-size: 20px;">close</i>
+                        </button>
+                    </div>
+    
+                    <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                        <div>
+                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Current Rules</h4>
+                            <div class="space-y-2" x-show="filters.length > 0">
+                                <template x-for="filter in filters" :key="filter.id">
+                                    <div class="flex items-center justify-between p-2 rounded-md bg-[var(--bg-medium)]">
+                                        <span class="text-sm text-[var(--text-main)]" x-text="getRuleLabel(filter)"></span>
+                                        <button @click="removeRule(filter.id)" class="p-1 -m-1 text-red-500 hover:text-red-400" title="Remove rule">
+                                            <i class="material-icons" style="font-size: 18px;">close</i>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+                             <p x-show="filters.length === 0" class="text-sm italic text-[var(--text-secondary)]">
+                                No rules yet. Videos will be sorted by your default sort order.
+                             </p>
+                        </div>
+
+                        <div class="border-t border-[var(--divider-color)]"></div>
+
+                        <div>
+                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Add New Rule</h4>
+                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] space-y-3">
+                                <select x-model="newRuleType" class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                    <option value="author">Author / Channel</option>
+                                    <option value="title">Title Keyword</option>
+                                    <option value="duration">Duration</option>
+                                </select>
+
+                                <template x-if="newRuleType === 'author'">
+                                    <select multiple x-model="newRuleAuthors"
+                                        class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                        <template x-for="author in allAuthors" :key="author">
+                                            <option :value="author" x-text="author"></option>
+                                        </template>
+                                    </select>
+                                </template>
+
+                                <template x-if="newRuleType === 'title'">
+                                    <input type="text" x-model="newRuleValue"
+                                        class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5"
+                                        placeholder="e.g. review, tutorial (comma-separated)">
+                                </template>
+
+                                <template x-if="newRuleType === 'duration'">
+                                    <div class="flex items-center gap-2">
+                                        <select x-model="newRuleOperator" class="rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                            <option value="gt">Greater than</option>
+                                            <option value="lt">Less than</option>
+                                        </select>
+                                        <input type="number" x-model.number="newRuleDuration" min="0" class="w-24 rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5">
+                                        <select x-model="newRuleDurationUnit" class="rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
+                                            <option value="minutes">minutes</option>
+                                            <option value="seconds">seconds</option>
+                                            <option value="hours">hours</option>
+                                        </select>
+                                    </div>
+                                </template>
+
+                                <button @click="addRule()" class="w-full rounded-md bg-gray-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-500 transition-colors">
+                                    Add Rule
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+    
+                    <div class="p-4 bg-[var(--bg-medium)] border-t border-[var(--divider-color)] flex justify-end gap-2">
+                        <button @click="closeSmartPlaylistSettings()" class="rounded-md bg-gray-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-500">
+                            Cancel
+                        </button>
+                        <button @click="saveSettings()" class="rounded-md bg-[var(--text-highlight)] px-4 py-2 text-sm font-medium text-[var(--bg-darkest)] hover:bg-opacity-80">
+                            Save Changes
+                        </button>
+                    </div>
+                </div>
+            </template>
         </div>
     </div>
 

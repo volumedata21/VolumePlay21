@@ -3,36 +3,36 @@
  */
 function videoApp() {
     return {
-        // --- State Variables (Managed by this component) ---
+        // --- State Variables ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isPlaylistModalOpen: false, // NEW: For the "Add to Playlist" modal
+        isPlaylistModalOpen: false,
+        isSmartPlaylistModalOpen: false, // [NEW]
+        currentSmartPlaylist: null,     // [NEW] Holds the playlist being edited
+        allAuthorsForFilter: [],      // [NEW] Holds authors for the filter modal
         isLoading: false,
 
         // --- Task Status ---
-        scanType: 'idle', // 'idle', 'new', 'full'
+        scanType: 'idle',
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
-
         isGeneratingThumbnails: false,
         thumbnailStatus: { status: 'idle', message: '', progress: 0, total: 0 },
         thumbnailPollInterval: null,
-        
         isCleaningUp: false,
         cleanupStatus: { status: 'idle', message: '', progress: 0 },
         cleanupPollInterval: null,
-
         transcodeQueue: [],
         transcodeStatus: { status: 'idle', message: '', video_id: null },
         transcodePollInterval: null,
         isCreatingThumb: false,
 
-        // Player state
+        // --- Player State ---
         isAutoplayEnabled: true,
         currentPlaybackSpeed: 1.0,
         playbackRates: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
 
-        // View & Data state
+        // --- View & Data State ---
         currentView: { type: 'all', id: null, author: null },
         currentTitle: 'All Videos',
         modalVideo: null,
@@ -41,20 +41,20 @@ function videoApp() {
         sortOrder: 'aired_newest',
         appData: {
             videos: [],
-            allVideos: [],
+            allVideos: [], // [MODIFIED] Still used for author list, but not filtering
             folder_tree: {},
             smartPlaylists: [],
-            standardPlaylists: [], // NEW: For standard playlists
+            standardPlaylists: [],
             authorCounts: {}
         },
         filterHistory: [],
 
-        // Pagination State
+        // --- Pagination State ---
         currentPage: 1,
         totalPages: 1,
         totalItems: 0,
 
-        // Global Filter Settings
+        // --- Global Filter Settings ---
         filterSettings: {
             shorts: 'normal',
             vr: 'normal',
@@ -78,6 +78,7 @@ function videoApp() {
 
             this.fetchMetadata();
             this.fetchVideos(true);
+            this.fetchAllVideosForCache(); // [NEW] Pre-fetch all video data for filters
             
             this.startScanPolling();
             this.startThumbnailPolling();
@@ -91,7 +92,7 @@ function videoApp() {
             });
 
             setInterval(() => {
-                if (!this.isModalOpen && !this.isAnyTaskRunning()) {
+                if (!this.isModalOpen && !this.isPlaylistModalOpen && !this.isAnyTaskRunning()) {
                     this.fetchVideos(true);
                 }
             }, 3600000);
@@ -105,13 +106,28 @@ function videoApp() {
                 const data = await response.json();
                 this.appData.folder_tree = data.folder_tree || {};
                 this.appData.smartPlaylists = data.smartPlaylists || [];
-                this.appData.standardPlaylists = data.standardPlaylists || []; // NEW
+                this.appData.standardPlaylists = data.standardPlaylists || [];
                 this.appData.authorCounts = data.author_counts || {};
             } catch (e) {
                 console.error('Error fetching metadata:', e);
                 this.appData.folder_tree = {};
                 this.appData.smartPlaylists = [];
                 this.appData.standardPlaylists = [];
+            }
+        },
+
+        // [NEW] Separate function to pre-load all-video cache
+        async fetchAllVideosForCache() {
+            try {
+                if (this.appData.allVideos.length > 0) return; // Already cached
+                const response = await fetch('/api/videos_all');
+                if (!response.ok) throw new Error('Failed to load all videos');
+                const data = await response.json();
+                this.appData.allVideos = data.articles || [];
+                this.allAuthorsForFilter = Array.from(new Set(this.appData.allVideos.map(v => v.author || 'Unknown Author')))
+                                                .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+            } catch (e) {
+                console.error('Error fetching all videos for cache:', e);
             }
         },
 
@@ -124,37 +140,15 @@ function videoApp() {
                 this.appData.videos = [];
             }
 
-            if (this.currentPage > this.totalPages && isNewQuery === false) {
+            if (this.currentPage > this.totalPages && !isNewQuery) {
                 return;
             }
 
             this.isLoading = true;
 
-            // Smart Playlist Exception: Load all videos
-            if (this.currentView.type === 'smart_playlist') {
-                try {
-                    if (this.appData.allVideos.length === 0) {
-                        const response = await fetch('/api/videos_all');
-                        if (!response.ok) throw new Error('Failed to load all videos');
-                        const data = await response.json();
-                        this.appData.allVideos = data.articles || [];
-                    }
-                    this.appData.videos = []; // This view is handled by filteredVideos
-                    this.totalItems = 0;
-                    this.totalPages = 1;
-                } catch (e) {
-                    console.error('Error fetching all videos for playlist:', e);
-                } finally {
-                    this.isLoading = false;
-                }
-                return;
-            }
-
             // Standard Playlist Exception: Not paginated
             if (this.currentView.type === 'standard_playlist') {
-                this.isLoading = false; // We will set it inside the block
-                // This view type is handled by the server, but not paginated.
-                // We just need to fetch it once.
+                this.isLoading = false; 
                 if (isNewQuery) {
                     this.isLoading = true;
                     const params = new URLSearchParams({
@@ -167,7 +161,7 @@ function videoApp() {
                         const data = await response.json();
                         this.appData.videos = data.articles;
                         this.totalItems = data.total_items;
-                        this.totalPages = data.total_pages; // Will be 1
+                        this.totalPages = data.total_pages;
                     } catch (e) {
                         console.error('Error fetching standard playlist videos:', e);
                     } finally {
@@ -177,7 +171,7 @@ function videoApp() {
                 return;
             }
 
-            // Standard Paginated Fetch
+            // [MODIFIED] Smart Playlist is now server-side and paginated
             const params = new URLSearchParams({
                 page: this.currentPage,
                 per_page: 30,
@@ -190,6 +184,15 @@ function videoApp() {
                 filterVR: this.filterSettings.vr,
                 filterOptimized: this.filterSettings.optimized,
             });
+
+            // [NEW] If it's a smart playlist, add the filters to the request
+            if (this.currentView.type === 'smart_playlist' && this.currentView.id) {
+                const playlist = this.appData.smartPlaylists.find(p => p.id === this.currentView.id);
+                if (playlist && playlist.filters) {
+                    // This sends the raw JSON filter array to the server
+                    params.append('smart_filters', JSON.stringify(playlist.filters));
+                }
+            }
 
             try {
                 const response = await fetch(`/api/videos?${params.toString()}`);
@@ -211,52 +214,14 @@ function videoApp() {
 
         // --- Computed Properties (Getters) ---
         get filteredVideos() {
-            // Smart Playlist Logic (Client-Side)
-            if (this.currentView.type === 'smart_playlist') {
-                const playlistId = this.currentView.id;
-                const playlist = this.appData.smartPlaylists.find(p => p.id === playlistId);
-                let videos = this.appData.allVideos;
-
-                if (playlist) {
-                    playlist.filters.forEach(filter => {
-                        if (filter.type === 'title') {
-                            const filterValue = String(filter.value || '');
-                            if (filterValue.startsWith('"') && filterValue.endsWith('"')) {
-                                const searchTerm = filterValue.substring(1, filterValue.length - 1);
-                                if (searchTerm) {
-                                    videos = videos.filter(v => (v.title || '').includes(searchTerm));
-                                }
-                            } else {
-                                const searchTerm = filterValue.toLowerCase();
-                                videos = videos.filter(v => (v.title || '').toLowerCase().includes(searchTerm));
-                            }
-                        }
-                        else if (filter.type === 'author') {
-                            const allowedAuthors = filter.value;
-                            if (allowedAuthors && allowedAuthors.length > 0) {
-                                videos = videos.filter(v => allowedAuthors.includes(v.author));
-                            }
-                        }
-                    });
-                }
-                
-                if (this.searchQuery.trim() !== '') {
-                    const query = this.searchQuery.toLowerCase();
-                    videos = videos.filter(v =>
-                        (v.title && v.title.toLowerCase().includes(query)) ||
-                        (v.summary && v.summary.toLowerCase().includes(query)) ||
-                        (v.author && v.author.toLowerCase().includes(query))
-                    );
-                }
-                videos.sort((a, b) => this.sortLogic(a, b));
-                return videos;
-            }
-
-            // All Other Views (Server-Paginated)
+            // [REMOVED] All client-side 'smart_playlist' filtering is GONE.
+            // The server now handles all filtering for all views.
             return this.appData.videos;
         },
 
         sortLogic(a, b) {
+            // This is now only used for client-side sorting on the *old* smart playlist system
+            // We can remove this once the new one is fully in place
             if (this.currentView.type === 'history') {
                 const dateA = a.last_watched ? new Date(a.last_watched) : 0;
                 const dateB = b.last_watched ? new Date(b.last_watched) : 0;
@@ -304,7 +269,7 @@ function videoApp() {
                 return 'Pruning library...';
             }
             
-            if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist') {
+            if (this.appData.videos.length === 0 && this.currentView.type !== 'smart_playlist' && this.currentView.type !== 'standard_playlist') {
                 if (this.searchQuery.trim() !== '') return 'No videos match your search.';
                 if (!this.appData.videos || this.totalItems === 0) {
                     return 'No videos found. Click the refresh icon to scan your library.';
@@ -313,7 +278,6 @@ function videoApp() {
             }
 
             if (this.appData.videos.length === 0 && this.currentView.type === 'smart_playlist') {
-                if (this.isLoading) return 'Loading videos for playlist...';
                 return 'No videos match this playlist\'s filters.';
             }
             
@@ -329,14 +293,9 @@ function videoApp() {
         },
 
         get libraryTaskButtonText() {
-            // Note: Scan buttons are handled separately in HTML
             if (this.isGeneratingThumbnails) {
                 return this.thumbnailStatus.total > 0 ? `Generating... ${this.thumbnailStatus.progress} / ${this.thumbnailStatus.total}` : 'Generating...';
             }
-            if (this.isCleaningUp) {
-                return 'Pruning...';
-            }
-            // Default text
             return 'Gen. Missing Thumbs';
         },
 
@@ -422,7 +381,10 @@ function videoApp() {
                 });
                 if (response.ok) {
                     const updatedPlaylist = await response.json();
-                    playlist.name = updatedPlaylist.name;
+                    const index = this.appData.smartPlaylists.findIndex(p => p.id === playlist.id);
+                    if (index !== -1) {
+                        this.appData.smartPlaylists[index] = updatedPlaylist;
+                    }
                     if (this.currentView.type === 'smart_playlist' && this.currentView.id === playlist.id) {
                         this.updateTitle();
                     }
@@ -455,59 +417,62 @@ function videoApp() {
                 }
             }
         },
-
-        handlePlaylistDrop(playlistId, event) {
-            console.log(`Placeholder: Dropped on playlist ${playlistId}`);
-        },
-
-        removeTagFromPlaylist(playlistId, tag) {
-            console.log(`Placeholder: Removing tag '${tag}' from playlist ${playlistId}`);
-        },
-
-        async removeFilterFromPlaylist(playlistId, filterId) {
-            try {
-                const response = await fetch(`/api/playlist/smart/${playlistId}/filter/remove`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filterId: filterId })
-                });
-                if (response.ok) {
-                    const updatedPlaylist = await response.json();
-                    const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
-                    if (index !== -1) {
-                        this.appData.smartPlaylists[index].filters = updatedPlaylist.filters;
-                    }
-                } else {
-                    const result = await response.json();
-                    console.error('Failed to remove filter:', result.error);
-                }
-            } catch (e) {
-                console.error('Error removing filter:', e);
-            }
-        },
-
-        async saveFilterToPlaylist(playlistId, filter) {
-            try {
-                const response = await fetch(`/api/playlist/smart/${playlistId}/filter`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filter: filter })
-                });
-                const updatedPlaylist = await response.json();
-                if (response.ok) {
-                    const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
-                    if (index !== -1) {
-                        this.appData.smartPlaylists[index].filters = updatedPlaylist.filters;
-                    }
-                } else {
-                    console.error('Failed to save filter to playlist:', updatedPlaylist.error);
-                }
-            } catch (e) {
-                console.error('Error saving filter to playlist:', e);
-            }
-        },
         
-        // --- NEW: Standard Playlist Functions ---
+        // [NEW] Functions to manage the new Smart Playlist Modal
+        openSmartPlaylistSettings(playlist) {
+            if (this.appData.allVideos.length === 0) {
+                alert("Please wait for all videos to load before editing filters.");
+                this.fetchAllVideosForCache(); // Trigger a load
+                return;
+            }
+            // Create a *deep copy* of the playlist for editing
+            this.currentSmartPlaylist = JSON.parse(JSON.stringify(playlist));
+            this.isSmartPlaylistModalOpen = true;
+        },
+
+        closeSmartPlaylistSettings() {
+            this.isSmartPlaylistModalOpen = false;
+            this.currentSmartPlaylist = null;
+        },
+
+        async saveSmartPlaylistSettings(newFilters) {
+            if (!this.currentSmartPlaylist) return;
+            
+            const playlistId = this.currentSmartPlaylist.id;
+            
+            try {
+                const response = await fetch(`/api/playlist/smart/${playlistId}/update_filters`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filters: newFilters })
+                });
+
+                const updatedPlaylist = await response.json();
+                if (!response.ok) {
+                    throw new Error(updatedPlaylist.error || 'Failed to save filters');
+                }
+
+                // Update the playlist in our main appData
+                const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
+                if (index !== -1) {
+                    this.appData.smartPlaylists[index] = updatedPlaylist;
+                }
+                
+                this.closeSmartPlaylistSettings();
+                
+                // If we are currently viewing this playlist, refresh the videos
+                if (this.currentView.type === 'smart_playlist' && this.currentView.id === playlistId) {
+                    this.fetchVideos(true);
+                }
+
+            } catch (e) {
+                console.error('Error saving smart playlist settings:', e);
+                alert(`Error: ${e.message}`);
+            }
+        },
+        // [END NEW]
+        
+        // --- Standard Playlist Functions ---
         async openPlaylistModal(videoId) {
             try {
                 const response = await fetch(`/api/video/${videoId}/playlists`);
@@ -534,15 +499,11 @@ function videoApp() {
                     throw new Error(newPlaylists.error || 'Failed to create playlist');
                 }
                 
-                // Server returns the full, updated list of playlists
                 this.appData.standardPlaylists = newPlaylists;
-                
-                // If in the sidebar, this will trigger a list refresh.
-                // If in the modal, this updates the checkboxes.
                 
             } catch (e) {
                 console.error('Error creating playlist:', e);
-                alert(`Error: ${e.message}`); // Simple error feedback
+                alert(`Error: ${e.message}`);
             }
         },
 
@@ -557,13 +518,11 @@ function videoApp() {
                 if (!response.ok) {
                     throw new Error(updatedPlaylists.error || 'Failed to update playlist');
                 }
-                // Re-assign the list to update the modal checkboxes
                 this.appData.standardPlaylists = updatedPlaylists;
             } catch (e) {
                 console.error('Error toggling video in playlist:', e);
             }
         },
-        // --- END NEW ---
 
         // --- UI Actions ---
         goBackOneFilter() {
@@ -616,7 +575,7 @@ function videoApp() {
                 const playlist = this.appData.smartPlaylists.find(p => p.id === id);
                 this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
             }
-            else if (type === 'standard_playlist') { // NEW
+            else if (type === 'standard_playlist') { 
                 const playlist = this.appData.standardPlaylists.find(p => p.id === id);
                 this.currentTitle = `Playlist: ${playlist ? playlist.name : 'Unknown'}`;
             }
@@ -1236,8 +1195,6 @@ function videoApp() {
         },
 
         async refreshModalVideoData(videoId) {
-            // This is a bug-fix. The old method was wrong.
-            // This new method fetches *only* the single video that was updated.
             if (!videoId) return;
             try {
                 const params = new URLSearchParams({ 
@@ -1250,9 +1207,11 @@ function videoApp() {
                 if (data.articles && data.articles.length > 0) {
                     const newVideoData = data.articles[0];
                     this.updateVideoData(newVideoData); 
-                    this.modalVideo = newVideoData; 
-                    this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
-                    this.refreshPlayerData();
+                    if (this.modalVideo && this.modalVideo.id === videoId) {
+                        this.modalVideo = newVideoData; 
+                        this.currentVideoSrc = this.modalVideo.has_transcode ? this.modalVideo.transcode_url : this.modalVideo.video_url;
+                        this.refreshPlayerData();
+                    }
                     console.log('Player source updated.');
                 } else {
                     this.fetchVideos(true); // Fallback
@@ -1388,68 +1347,9 @@ function seekVideo(event, timestampString) {
 }
 
 /**
- * Alpine.js component for managing the filter selection.
+ * [REMOVED] The old filterEditor is no longer needed.
+ * We will add a new one in the next step.
  */
-function filterEditor(playlistId, appData) {
-    return {
-        playlistId: playlistId,
-        selectedType: 'title',
-        textValue: '',
-        selectedAuthors: [],
-        typeLabels: {
-            'title': 'Title Content',
-            'author': 'Author'
-        },
-
-        get allAuthors() {
-            const videos = appData.allVideos || [];
-            const authors = new Set(videos.map(v => v.author || 'Unknown Author'));
-            return Array.from(authors).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-        },
-        resetValues() {
-            this.textValue = '';
-            this.selectedAuthors = [];
-        },
-
-        isFilterValid() {
-            if (this.selectedType === 'title') {
-                return typeof this.textValue === 'string' && this.textValue.trim().length > 0;
-            }
-            if (this.selectedType === 'author') {
-                return this.selectedAuthors.length > 0;
-            }
-            return false;
-        },
-
-        applyFilter() {
-            if (!this.isFilterValid()) {
-                console.warn('Filter submission ignored: Input is invalid.');
-                return;
-            }
-
-            let filterValue;
-            if (this.selectedType === 'title') {
-                filterValue = this.textValue.trim();
-            } else if (this.selectedType === 'author') {
-                filterValue = this.selectedAuthors;
-            }
-
-            let filter = {
-                id: `${Date.now()}-${this.selectedType}`,
-                type: this.selectedType,
-                label: this.typeLabels[this.selectedType],
-                value: filterValue
-            };
-
-            this.$dispatch('save-filter', {
-                playlistId: this.playlistId,
-                filter: filter
-            });
-
-            this.$root.parentElement.__x.$data.isEditingFilters = false;
-        }
-    };
-}
 
 /**
  * Alpine.js component for the recursive folder tree.
@@ -1488,10 +1388,102 @@ function folderTree(tree, basePath = '') {
 document.addEventListener('alpine:init', () => {
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);
-    Alpine.data('filterEditor', filterEditor);
+    // [REMOVED] filterEditor is no longer globally registered
+    
+    // [NEW] Register the new smartPlaylistEditor
+    Alpine.data('smartPlaylistEditor', smartPlaylistEditor);
 
     Alpine.store('globalState', {
         openFolderPaths: [],
         currentView: { type: 'all', id: null, author: null },
     });
 });
+
+/**
+ * [NEW] Alpine.js component for the Smart Playlist Settings modal.
+ */
+function smartPlaylistEditor(playlist, allAuthors) {
+    return {
+        // We are editing a *copy* of the filters
+        filters: JSON.parse(JSON.stringify(playlist.filters || [])),
+        allAuthors: allAuthors || [],
+        
+        // State for adding a new rule
+        newRuleType: 'author',
+        newRuleOperator: 'is',
+        newRuleValue: '',
+        newRuleAuthors: [],
+        newRuleDuration: 0,
+        newRuleDurationUnit: 'minutes',
+
+        addRule() {
+            let newFilter = {
+                id: `filter_${Date.now()}`,
+                type: this.newRuleType,
+            };
+
+            if (this.newRuleType === 'author') {
+                if (this.newRuleAuthors.length === 0) return;
+                newFilter.value = this.newRuleAuthors;
+            } 
+            else if (this.newRuleType === 'title') {
+                if (this.newRuleValue.trim() === '') return;
+                // Split by comma, trim whitespace
+                newFilter.value = this.newRuleValue.split(',').map(s => s.trim()).filter(s => s);
+                if (newFilter.value.length === 0) return;
+            }
+            else if (this.newRuleType === 'duration') {
+                let durationInSeconds = 0;
+                const duration = parseInt(this.newRuleDuration);
+                if (isNaN(duration) || duration <= 0) return;
+                
+                if (this.newRuleDurationUnit === 'minutes') {
+                    durationInSeconds = duration * 60;
+                } else if (this.newRuleDurationUnit === 'hours') {
+                    durationInSeconds = duration * 3600;
+                } else {
+                    durationInSeconds = duration;
+                }
+                
+                newFilter.operator = this.newRuleOperator;
+                newFilter.value = durationInSeconds;
+            }
+
+            this.filters.push(newFilter);
+            this.resetNewRuleForm();
+        },
+
+        removeRule(filterId) {
+            this.filters = this.filters.filter(f => f.id !== filterId);
+        },
+
+        resetNewRuleForm() {
+            this.newRuleType = 'author';
+            this.newRuleOperator = 'is';
+            this.newRuleValue = '';
+            this.newRuleAuthors = [];
+            this.newRuleDuration = 0;
+            this.newRuleDurationUnit = 'minutes';
+        },
+
+        getRuleLabel(filter) {
+            switch(filter.type) {
+                case 'author':
+                    return `Author is one of: [${filter.value.join(', ')}]`;
+                case 'title':
+                    return `Title contains (any of): [${filter.value.join(', ')}]`;
+                case 'duration':
+                    const operator = filter.operator === 'gt' ? '>' : '<';
+                    const minutes = Math.floor(filter.value / 60);
+                    return `Duration is ${operator} ${minutes} minutes`;
+                default:
+                    return 'Unknown filter';
+            }
+        },
+
+        async saveSettings() {
+            // Find the main videoApp component and call its save function
+            this.$dispatch('save-smart-playlist-filters', this.filters);
+        }
+    };
+}
