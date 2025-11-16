@@ -967,6 +967,7 @@
     </div>
 
     <!-- Smart Playlist Settings Modal -->
+    <!-- Smart Playlist Settings Modal -->
     <div x-show="isSmartPlaylistModalOpen" @keydown.escape.window="closeSmartPlaylistSettings()"
         class="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4" x-cloak>
         
@@ -985,6 +986,7 @@
             x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             @click.outside="closeSmartPlaylistSettings()">
             
+            <!-- This template ensures the editor is re-initialized every time the modal opens -->
             <template x-if="currentSmartPlaylist">
                 <div x-data="smartPlaylistEditor(currentSmartPlaylist, allAuthorsForFilter)">
                     <div class="flex items-center justify-between p-4 border-b border-[var(--divider-color)]">
@@ -996,11 +998,32 @@
                         </button>
                     </div>
     
-                    <div class="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                    <!-- This is the new UI -->
+                    <div class="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+                        
+                        <!-- Section 1: Author Checkboxes -->
                         <div>
-                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Current Rules</h4>
-                            <div class="space-y-2" x-show="filters.length > 0">
-                                <template x-for="filter in filters" :key="filter.id">
+                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Filter by Author / Channel</h4>
+                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] max-h-60 overflow-y-auto space-y-2 pr-2">
+                                <template x-for="author in allAuthors" :key="author">
+                                    <label class="flex items-center gap-3 p-2 rounded-md hover:bg-[var(--bg-highlight)]/50 cursor-pointer">
+                                        <input type="checkbox" 
+                                            class="rounded bg-[var(--bg-darkest)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)]"
+                                            :value="author"
+                                            x-model="checkedAuthors">
+                                        <span class="text-sm font-medium text-[var(--text-main)]" x-text="author"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+
+                        <!-- Section 2: Advanced Rules -->
+                        <div>
+                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Advanced Rules</h4>
+                            
+                            <!-- List of existing advanced rules -->
+                            <div class="space-y-2 mb-3" x-show="otherFilters.length > 0">
+                                <template x-for="filter in otherFilters" :key="filter.id">
                                     <div class="flex items-center justify-between p-2 rounded-md bg-[var(--bg-medium)]">
                                         <span class="text-sm text-[var(--text-main)]" x-text="getRuleLabel(filter)"></span>
                                         <button @click="removeRule(filter.id)" class="p-1 -m-1 text-red-500 hover:text-red-400" title="Remove rule">
@@ -1009,30 +1032,16 @@
                                     </div>
                                 </template>
                             </div>
-                             <p x-show="filters.length === 0" class="text-sm italic text-[var(--text-secondary)]">
-                                No rules yet. Videos will be sorted by your default sort order.
+                             <p x-show="otherFilters.length === 0" class="text-sm italic text-[var(--text-secondary)] mb-3">
+                                No advanced rules added yet.
                              </p>
-                        </div>
 
-                        <div class="border-t border-[var(--divider-color)]"></div>
-
-                        <div>
-                            <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Add New Rule</h4>
-                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] space-y-3">
+                            <!-- Form to add a new advanced rule -->
+                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] space-y-3 border border-dashed border-[var(--divider-color)]">
                                 <select x-model="newRuleType" class="w-full rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
-                                    <option value="author">Author / Channel</option>
                                     <option value="title">Title Keyword</option>
                                     <option value="duration">Duration</option>
                                 </select>
-
-                                <template x-if="newRuleType === 'author'">
-                                    <select multiple x-model="newRuleAuthors"
-                                        class="w-full h-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] p-1.5 focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)]">
-                                        <template x-for="author in allAuthors" :key="author">
-                                            <option :value="author" x-text="author"></option>
-                                        </template>
-                                    </select>
-                                </template>
 
                                 <template x-if="newRuleType === 'title'">
                                     <input type="text" x-model="newRuleValue"

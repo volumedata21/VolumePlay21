@@ -1404,17 +1404,26 @@ document.addEventListener('alpine:init', () => {
  */
 function smartPlaylistEditor(playlist, allAuthors) {
     return {
-        // We are editing a *copy* of the filters
-        filters: JSON.parse(JSON.stringify(playlist.filters || [])),
+        // --- State ---
         allAuthors: allAuthors || [],
+        checkedAuthors: [],  // Holds the names of authors to filter by
+        otherFilters: [],    // Holds non-author filters (title, duration)
         
-        // State for adding a new rule
-        newRuleType: 'author',
-        newRuleOperator: 'is',
+        // State for adding a new *advanced* rule
+        newRuleType: 'title', // Default to title, since author is separate
+        newRuleOperator: 'gt',
         newRuleValue: '',
-        newRuleAuthors: [],
         newRuleDuration: 0,
         newRuleDurationUnit: 'minutes',
+
+        init() {
+            // Deconstruct the saved filters into our two states
+            const authorRule = playlist.filters.find(f => f.type === 'author');
+            if (authorRule && Array.isArray(authorRule.value)) {
+                this.checkedAuthors = [...authorRule.value];
+            }
+            this.otherFilters = playlist.filters.filter(f => f.type !== 'author');
+        },
 
         addRule() {
             let newFilter = {
@@ -1422,16 +1431,14 @@ function smartPlaylistEditor(playlist, allAuthors) {
                 type: this.newRuleType,
             };
 
-            if (this.newRuleType === 'author') {
-                if (this.newRuleAuthors.length === 0) return;
-                newFilter.value = this.newRuleAuthors;
-            } 
-            else if (this.newRuleType === 'title') {
+            if (this.newRuleType === 'title') {
                 if (this.newRuleValue.trim() === '') return;
-                // Split by comma, trim whitespace
-                newFilter.value = this.newRuleValue.split(',').map(s => s.trim()).filter(s => s);
+                // Split by comma, trim whitespace, remove blanks
+                newFilter.value = this.newRuleValue.split(',')
+                    .map(s => s.trim())
+                    .filter(s => s);
                 if (newFilter.value.length === 0) return;
-            }
+            } 
             else if (this.newRuleType === 'duration') {
                 let durationInSeconds = 0;
                 const duration = parseInt(this.newRuleDuration);
@@ -1442,38 +1449,36 @@ function smartPlaylistEditor(playlist, allAuthors) {
                 } else if (this.newRuleDurationUnit === 'hours') {
                     durationInSeconds = duration * 3600;
                 } else {
-                    durationInSeconds = duration;
+                    durationInSeconds = duration; // Fsllback for seconds
                 }
                 
                 newFilter.operator = this.newRuleOperator;
                 newFilter.value = durationInSeconds;
             }
 
-            this.filters.push(newFilter);
+            this.otherFilters.push(newFilter);
             this.resetNewRuleForm();
         },
 
         removeRule(filterId) {
-            this.filters = this.filters.filter(f => f.id !== filterId);
+            this.otherFilters = this.otherFilters.filter(f => f.id !== filterId);
         },
 
         resetNewRuleForm() {
-            this.newRuleType = 'author';
-            this.newRuleOperator = 'is';
+            this.newRuleType = 'title';
+            this.newRuleOperator = 'gt';
             this.newRuleValue = '';
-            this.newRuleAuthors = [];
             this.newRuleDuration = 0;
             this.newRuleDurationUnit = 'minutes';
         },
 
         getRuleLabel(filter) {
             switch(filter.type) {
-                case 'author':
-                    return `Author is one of: [${filter.value.join(', ')}]`;
                 case 'title':
                     return `Title contains (any of): [${filter.value.join(', ')}]`;
                 case 'duration':
                     const operator = filter.operator === 'gt' ? '>' : '<';
+                    // Convert seconds back to minutes for display
                     const minutes = Math.floor(filter.value / 60);
                     return `Duration is ${operator} ${minutes} minutes`;
                 default:
@@ -1482,8 +1487,20 @@ function smartPlaylistEditor(playlist, allAuthors) {
         },
 
         async saveSettings() {
-            // Find the main videoApp component and call its save function
-            this.$dispatch('save-smart-playlist-filters', this.filters);
+            // Reconstruct the final filters list
+            let finalFilters = [...this.otherFilters];
+            
+            // Add the single, combined author rule IF any are checked
+            if (this.checkedAuthors.length > 0) {
+                finalFilters.push({
+                    id: 'author_filter_group', // Use a consistent ID
+                    type: 'author',
+                    value: this.checkedAuthors
+                });
+            }
+            
+            // Dispatch the event with the complete, new filter list
+            this.$dispatch('save-smart-playlist-filters', finalFilters);
         }
     };
 }
