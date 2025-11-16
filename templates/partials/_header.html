@@ -1,0 +1,74 @@
+<header
+    class="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] bg-[var(--bg-darkest)]/80 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+    <button type="button"
+        class="-ml-2.5 p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-bright)] lg:hidden"
+        @click="isMobileMenuOpen = true">
+        <i class="material-icons" style="font-size: 24px;">menu</i>
+    </button>
+    <div class="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
+        <button
+            x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'smart_playlist' || currentView.type === 'standard_playlist'"
+            @click="setView('all'); searchQuery=''"
+            class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+            title="Clear all filters" x-transition:enter="transition ease-out duration-100"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-75"
+            x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+            x-cloak>
+            <span class="material-icons" style="font-size: 24px;">cancel</span>
+        </button>
+
+        <button x-show="filterHistory.length > 0" @click="goBackOneFilter()"
+            class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+            title="Go back one filter step" x-transition:enter="transition ease-out duration-100"
+            x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100"
+            x-transition:leave="transition ease-in duration-75"
+            x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95"
+            x-cloak>
+            <span class="material-icons" style="font-size: 24px;">arrow_back</span>
+        </button>
+
+        <!-- Show Author Poster -->
+        <template x-if="appData.currentAuthorPosterUrl">
+            <img :src="appData.currentAuthorPosterUrl" alt="Author Poster" class="w-10 h-10 object-cover rounded-full flex-shrink-0">
+        </template>
+        <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentView.type === 'author' ? currentView.author : currentTitle"></h1>
+    </div>
+    <div class="flex shrink-0 items-center gap-2 pl-2 sm:pl-4">
+        <div class="flex items-center gap-1.5" title="Toggle Autoplay">
+            <span class="material-icons text-sm"
+                :class="isAutoplayEnabled ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)]'">
+                autoplay
+            </span>
+            <button @click="isAutoplayEnabled = !isAutoplayEnabled"
+                class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--highlight-ring)] focus:ring-offset-2 focus:ring-offset-[var(--bg-medium)]"
+                :class="isAutoplayEnabled ? 'bg-[var(--text-highlight)]' : 'bg-[var(--divider-color)]'"
+                role="switch" :aria-checked="isAutoplayEnabled.toString()">
+                <span
+                    class="pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                    :class="{ 'translate-x-4': isAutoplayEnabled, 'translate-x-0': !isAutoplayEnabled }"></span>
+            </button>
+        </div>
+        <div class="relative">
+            <span class="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                <i class="material-icons text-[var(--text-secondary)]" style="font-size: 20px;">search</i>
+            </span>
+            <input type="search" placeholder="Search..." x-model.debounce.300ms="searchQuery"
+                class="w-32 rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] pl-10 text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] sm:w-52">
+        </div>
+        <select x-model="sortOrder"
+            class="hidden rounded-md border-[var(--divider-color)] bg-[var(--bg-medium)] text-sm text-[var(--text-bright)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] sm:block">
+            <option value="aired_newest">Aired (Newest)</option>
+            <option value="aired_oldest">Aired (Oldest)</option>
+            <option value="uploaded_newest">Upload (Newest)</option>
+            <option value="uploaded_oldest">Upload (Oldest)</option>
+            <option value="duration_longest">Length (Longest)</option>
+            <option value="duration_shortest">Length (Shortest)</option>
+        </select>
+        <button class="p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)]"
+            @click="scanNewVideos()" :disabled="isAnyTaskRunning()">
+            <i class="material-icons" :class="{ 'animate-spin': isAnyTaskRunning() }"
+                style="font-size: 20px;">refresh</i>
+        </button>
+    </div>
+</header>
