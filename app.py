@@ -43,6 +43,9 @@ else:
 sys.stdout.flush()
 
 ## --- Global Locks & Status ---
+# CRITICAL: This lock protects all concurrent database writes from background threads.
+DB_WRITE_LOCK = threading.Lock()
+
 thumbnail_generation_lock = threading.Lock()
 THUMBNAIL_STATUS = {"status": "idle", "message": "", "progress": 0, "total": 0}
 
@@ -85,7 +88,7 @@ class Video(db.Model):
     has_nfo = db.Column(db.Boolean, default=False)
     is_short = db.Column(db.Boolean, default=False, index=True)
     dimensions = db.Column(db.String(100), nullable=True)
-    duration = db.Column(db.Integer, default=0)
+    duration = db.Column(db.Integer, default=0, index=True)
     video_codec = db.Column(db.String(50), nullable=True)
     transcoded_path = db.Column(db.String(1000), nullable=True, index=True)
     video_type = db.Column(db.String(50), nullable=True, index=True)
@@ -149,7 +152,7 @@ class Video(db.Model):
 class SmartPlaylist(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    filters = db.Column(db.Text, default='[]')
+    filters = db.Column(db.Text, default='[]') # Stores JSON array of rules
 
     def to_dict(self):
         return {
@@ -242,12 +245,14 @@ def _prune_missing_videos(found_video_paths):
             deleted_count += 1
             
         if deleted_count > 0:
-            db.session.commit()
+            with DB_WRITE_LOCK:
+                db.session.commit()
         print(f"  - Prune: Finished. Deleted {deleted_count} videos.")
 
     except Exception as e:
         print(f"  - Error during prune: {e}")
-        db.session.rollback()
+        with DB_WRITE_LOCK:
+            db.session.rollback()
     
     return deleted_count
 
@@ -270,6 +275,7 @@ def _scan_videos_task(full_scan=False):
             found_video_paths = set()
             video_extensions = ['.mkv', '.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm']
             image_extensions = ['.jpg', '.jpeg', '.png', '.tbn']
+            poster_filenames = ['poster.jpg', 'poster.jpeg', 'poster.png', 'poster.gif']
 
             for dirpath, dirnames, filenames in os.walk(video_dir, topdown=True):
                 
@@ -429,15 +435,24 @@ def _scan_videos_task(full_scan=False):
                         while True:
                             if not os.path.commonpath([video_dir, current_search_dir]) == video_dir:
                                 break
-                            potential_poster = os.path.join(current_search_dir, 'poster.jpg')
-                            if os.path.exists(potential_poster):
-                                poster_path_to_save = potential_poster
-                                break
+                            
+                            try:
+                                files_in_dir = os.listdir(current_search_dir)
+                                for f in files_in_dir:
+                                    if f.lower() in poster_filenames:
+                                        poster_path_to_save = os.path.join(current_search_dir, f)
+                                        break
+                            except Exception as e:
+                                print(f"  - Error listing files for poster: {e}")
+                            
+                            if poster_path_to_save:
+                                break 
+
                             if os.path.samefile(current_search_dir, video_dir):
                                 break
                             current_search_dir = os.path.dirname(current_search_dir)
                     except Exception as e:
-                        print(f"  - Error searching for poster.jpg: {e}")
+                        print(f"  - Error searching for poster: {e}")
 
                     transcoded_file_path = None
                     try:
@@ -547,7 +562,8 @@ def _scan_videos_task(full_scan=False):
                             added_count += 1
                     except Exception as e:
                         print(f"  - DB Error processing {video_file_path}: {e}")
-                        db.session.rollback()
+                        with DB_WRITE_LOCK:
+                            db.session.rollback()
 
                     current_progress = added_count + updated_count
                     if current_progress > 0 and current_progress % 50 == 0:
@@ -555,10 +571,12 @@ def _scan_videos_task(full_scan=False):
                         SCAN_STATUS['progress'] = current_progress
                         SCAN_STATUS['message'] = f"Scanning... {current_progress} processed."
                         sys.stdout.flush()
-                        db.session.commit()
+                        with DB_WRITE_LOCK:
+                            db.session.commit()
 
             if added_count > 0 or updated_count > 0:
-                db.session.commit()
+                with DB_WRITE_LOCK:
+                    db.session.commit()
             print(f"Scan finished. Added: {added_count}, Updated: {updated_count} videos.")
             
             deleted_count = 0
@@ -573,7 +591,8 @@ def _scan_videos_task(full_scan=False):
 
     except Exception as e:
         print(f"  - Error during scan task: {e}")
-        db.session.rollback()
+        with DB_WRITE_LOCK:
+            db.session.rollback()
         SCAN_STATUS = {"status": "error", "message": str(e), "progress": 0}
     finally:
         SCAN_LOCK.release()
@@ -618,7 +637,8 @@ def _cleanup_library_task():
 
     except Exception as e:
         print(f"  - Error during cleanup task: {e}")
-        db.session.rollback()
+        with DB_WRITE_LOCK:
+            db.session.rollback()
         CLEANUP_STATUS = {"status": "error", "message": str(e), "progress": 0}
     finally:
         CLEANUP_LOCK.release()
@@ -747,17 +767,20 @@ def _generate_thumbnails_task():
                 except Exception as e:
                     print(f"  - General error processing {video.filename}: {e}")
                     sys.stdout.flush() 
-                    db.session.rollback()
+                    with DB_WRITE_LOCK:
+                        db.session.rollback()
                 
                 if generated_count > 0 and generated_count % 50 == 0:
                     print(f"  - Committing batch of 50 thumbnails to database...")
                     sys.stdout.flush()
-                    db.session.commit()
+                    with DB_WRITE_LOCK:
+                        db.session.commit()
             
             if generated_count > 0:
                 print("  - Committing final thumbnail batch to database...")
                 sys.stdout.flush()
-                db.session.commit()
+                with DB_WRITE_LOCK:
+                    db.session.commit()
 
             print(f"Thumbnail generation task finished. Generated {generated_count} new thumbnails.")
             sys.stdout.flush() 
@@ -765,7 +788,8 @@ def _generate_thumbnails_task():
         except Exception as e:
             print(f"Fatal error in thumbnail task: {e}")
             sys.stdout.flush() 
-            db.session.rollback()
+            with DB_WRITE_LOCK:
+                db.session.rollback()
             THUMBNAIL_STATUS.update({
                 "status": "error", "message": str(e), "progress": 0, "total": 0
             })
@@ -834,7 +858,8 @@ def _transcode_video_task(video_id):
                 subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
             
             video.transcoded_path = output_path
-            db.session.commit()
+            with DB_WRITE_LOCK:
+                db.session.commit()
             print(f"  - Transcode complete: {output_path}")
             
             TRANSCODE_STATUS = {"status": "idle", "message": "Transcode complete.", "video_id": None}
@@ -844,7 +869,8 @@ def _transcode_video_task(video_id):
         TRANSCODE_STATUS = {"status": "error", "message": "FFmpeg failed.", "video_id": video_id}
     except Exception as e:
         print(f"  - Error during transcode task: {e}")
-        db.session.rollback()
+        with DB_WRITE_LOCK:
+            db.session.rollback()
         TRANSCODE_STATUS = {"status": "error", "message": str(e), "video_id": video_id}
     finally:
         TRANSCODE_LOCK.release()
@@ -961,10 +987,10 @@ def get_videos():
         
         elif viewType == 'smart_playlist' and viewId:
             playlist = db.get_or_404(SmartPlaylist, viewId)
-            filters = json.loads(playlist.filters) if playlist.filters else []
+            filters_json = request.args.get('smart_filters') # Filters are passed from JS
+            filters = json.loads(filters_json) if filters_json else []
             
             if filters:
-                # This is the master list of all rules, which will be joined by AND
                 master_filter_conditions = []
                 
                 # --- 1. Process Author Filters (as one OR group) ---
@@ -974,14 +1000,11 @@ def get_videos():
                         author_values.extend(f['value'])
                 
                 if author_values:
-                    # Use 'in_' to create a "author = A OR author = B OR ..."
                     master_filter_conditions.append(Video.show_title.in_(author_values))
                     
                 # --- 2. Process Title Keyword Filters (as one OR group) ---
                 keyword_values = []
                 for f in filters:
-                    # Note: Your JS sends 'title', but your py code was checking for 'title_keywords'
-                    # I've corrected it to check for 'title' to match the JS.
                     if f.get('type') == 'title' and f.get('value'): 
                         keyword_values.extend(f['value'])
                 
@@ -990,7 +1013,6 @@ def get_videos():
                     for keyword in keyword_values:
                         keyword_or_conditions.append(Video.title.ilike(f"%{keyword}%"))
                     if keyword_or_conditions:
-                        # Add the entire "OR" block as one "AND" condition
                         master_filter_conditions.append(or_(*keyword_or_conditions))
 
                 # --- 3. Process Duration Filters (as individual ANDs) ---
@@ -1005,7 +1027,6 @@ def get_videos():
                         except (ValueError, TypeError):
                             pass # Ignore invalid duration filter
                 
-                # --- Apply all conditions ---
                 if master_filter_conditions:
                     base_query = base_query.where(and_(*master_filter_conditions))
         

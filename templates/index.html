@@ -30,6 +30,11 @@
         .aspect-9-16 {
             padding-top: 177.78%;
         }
+        /* Fix for Alpine's x-collapse */
+        [x-collapse] {
+            overflow: hidden;
+            transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
     </style>
 </head>
 
@@ -87,7 +92,7 @@
                 <div class="pt-2" x-cloak>
                     <button @click="sidebarState.filterTags = !sidebarState.filterTags" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
-                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.filterTags}">expand_more</i>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform duration-300" :class="{'rotate-180': sidebarState.filterTags}">expand_more</i>
                     </button>
                     <div x-show="sidebarState.filterTags" x-collapse>
                         <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
@@ -122,7 +127,7 @@
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
                     <button @click="sidebarState.standardPlaylists = !sidebarState.standardPlaylists" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Playlists</h3>
-                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.standardPlaylists}">expand_more</i>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform duration-300" :class="{'rotate-180': sidebarState.standardPlaylists}">expand_more</i>
                     </button>
                     <div x-show="sidebarState.standardPlaylists" x-collapse>
                         <div class="flex items-center gap-1 px-3 mt-1 mb-2">
@@ -158,7 +163,7 @@
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
                     <button @click="sidebarState.smartPlaylists = !sidebarState.smartPlaylists" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
-                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.smartPlaylists}">expand_more</i>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform duration-300" :class="{'rotate-180': sidebarState.smartPlaylists}">expand_more</i>
                     </button>
                     <div x-show="sidebarState.smartPlaylists" x-collapse>
                         <div class="flex items-center gap-1 px-3 mt-1 mb-2">
@@ -213,7 +218,7 @@
                 <div class="pt-2" x-cloak>
                     <button @click="sidebarState.globalFilters = !sidebarState.globalFilters" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Global Filters</h3>
-                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.globalFilters}">expand_more</i>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform duration-300" :class="{'rotate-180': sidebarState.globalFilters}">expand_more</i>
                     </button>
                     <div x-show="sidebarState.globalFilters" x-collapse class="px-4 pt-2 pb-2 space-y-2">
                         <button @click="cycleShortsFilter()"
@@ -240,6 +245,21 @@
                                }">movie_filter</i>
                             <span>Optimized</span>
                         </button>
+
+                        <div class="border-t border-[var(--divider-color)] my-2"></div>
+
+                        <label for="showTitles" class="flex items-center justify-between cursor-pointer">
+                            <span class="text-sm text-[var(--text-main)]">Show Titles</span>
+                            <input id="showTitles" type="checkbox" x-model="filterSettings.showTitles" class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)]">
+                        </label>
+                        <label for="showFooter" class="flex items-center justify-between cursor-pointer">
+                            <span class="text-sm text-[var(--text-main)]">Show Video Footer</span>
+                            <input id="showFooter" type="checkbox" x-model="filterSettings.showFooter" class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)]">
+                        </label>
+                        <label for="showDuration" class="flex items-center justify-between cursor-pointer">
+                            <span class="text-sm text-[var(--text-main)]">Show Duration</span>
+                            <input id="showDuration" type="checkbox" x-model="filterSettings.showDuration" class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)]">
+                        </label>
                     </div>
                 </div>
 
@@ -248,7 +268,7 @@
                 <div class="pt-2" x-cloak>
                      <button @click="sidebarState.libraryTools = !sidebarState.libraryTools" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Library Tools</h3>
-                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.libraryTools}">expand_more</i>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform duration-300" :class="{'rotate-180': sidebarState.libraryTools}">expand_more</i>
                     </button>
                     <div x-show="sidebarState.libraryTools" x-collapse class="px-4 pt-2 pb-4 space-y-2">
                         <button @click="scanNewVideos()" :disabled="isAnyTaskRunning()"
@@ -287,9 +307,9 @@
                     @click="isMobileMenuOpen = true">
                     <i class="material-icons" style="font-size: 24px;">menu</i>
                 </button>
-                <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
+                <div class="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
                     <button
-                        x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'custom_stream' || currentView.type === 'category'"
+                        x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'smart_playlist' || currentView.type === 'standard_playlist'"
                         @click="setView('all'); searchQuery=''"
                         class="p-1 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
                         title="Clear all filters" x-transition:enter="transition ease-out duration-100"
@@ -310,9 +330,11 @@
                         <span class="material-icons" style="font-size: 24px;">arrow_back</span>
                     </button>
 
-                    <div class="min-w-0 flex-1 flex items-center">
-                        <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentTitle"></h1>
-                    </div>
+                    <!-- Show Author Poster -->
+                    <template x-if="appData.currentAuthorPosterUrl">
+                        <img :src="appData.currentAuthorPosterUrl" alt="Author Poster" class="w-10 h-10 object-cover rounded-full flex-shrink-0">
+                    </template>
+                    <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentTitle"></h1>
                 </div>
                 <div class="flex shrink-0 items-center gap-2 pl-2 sm:pl-4">
                     <div class="flex items-center gap-1.5" title="Toggle Autoplay">
@@ -378,10 +400,12 @@
                                     <div
                                         class="no-thumb-text hidden absolute top-0 left-0 w-full h-full items-center justify-center text-[var(--text-secondary)]">
                                         (Image failed)</div>
-                                    <div x-show="video.duration > 0"
-                                        class="absolute top-2 right-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
-                                        <span x-text="formatDuration(video.duration)"></span>
-                                    </div>
+                                    <template x-if="filterSettings.showDuration">
+                                        <div x-show="video.duration > 0"
+                                            class="absolute top-2 right-2 rounded-sm bg-black/70 px-1.5 py-0.5 text-xs font-semibold text-white">
+                                            <span x-text="formatDuration(video.duration)"></span>
+                                        </div>
+                                    </template>
                                 </div>
                             </template>
                             <template x-if="!video.image_url">
@@ -394,83 +418,87 @@
                             </template>
                         </a>
 
-                        <div class="flex flex-1 flex-col justify-between p-5">
-                            <div class="flex-1">
-                                <h3 class="text-md font-semibold text-[var(--text-bright)] leading-tight"
-                                    style="text-wrap: balance;">
-                                    <a href="#" @click.prevent="openModal(video)" class="hover:underline"
-                                        x-text="video.title"></a>
-                                </h3>
-                            </div>
-                        </div>
-
-                        <div
-                            class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5 bg-[#182030]">
-                            <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
-                                <div class="flex items-center">
-                                    <a href="#" @click.prevent="setView('author', null, video.author)"
-                                        class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors truncate flex-shrink"
-                                        x-text="video.author"></a>
-                                    <template x-if="video.is_short">
-                                        <a href="#"
-                                            @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
-                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
-                                            style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
-                                            onmouseover="this.style.borderColor='#fff8e8'"
-                                            onmouseout="this.style.borderColor='#e16c39'"
-                                            :title="currentView.type === 'shorts' ? 'Clear Shorts filter' : 'Filter by Shorts'">
-                                            Short
-                                        </a>
-                                    </template>
-                                    <template x-if="video.has_transcode">
-                                        <a href="#"
-                                            @click.prevent.stop="currentView.type === 'optimized' ? setView('all') : setView('optimized')"
-                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
-                                            style="color: #93c5fd; background-color: transparent; border: 1px solid #1e40af;"
-                                            onmouseover="this.style.borderColor='#dbeafe'"
-                                            onmouseout="this.style.borderColor='#1e40af'"
-                                            :title="currentView.type === 'optimized' ? 'Clear Optimized filter' : 'Filter by Optimized'">
-                                            Optimized
-                                        </a>
-                                    </template>
-                                    <template
-                                        x-if="video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB'">
-                                        <a href="#"
-                                            @click.prevent.stop="currentView.type === 'VR180' ? setView('all') : setView('VR180')"
-                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
-                                            style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
-                                            onmouseover="this.style.borderColor='#f5d0fe'"
-                                            onmouseout="this.style.borderColor='#701a75'"
-                                            :title="currentView.type === 'VR180' ? 'Clear VR180 filter' : 'Filter by VR180'">
-                                            VR180
-                                        </a>
-                                    </template>
-                                    <template x-if="video.video_type === 'VR360'">
-                                        <a href="#"
-                                            @click.prevent.stop="currentView.type === 'VR360' ? setView('all') : setView('VR360')"
-                                            class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
-                                            style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
-                                            onmouseover="this.style.borderColor='#f5d0fe'"
-                                            onmouseout="this.style.borderColor='#701a75'"
-                                            :title="currentView.type === 'VR360' ? 'Clear VR360 filter' : 'Filter by VR360'">
-                                            VR360
-                                        </a>
-                                    </template>
+                        <template x-if="filterSettings.showTitles">
+                            <div class="flex flex-1 flex-col justify-between p-5">
+                                <div class="flex-1">
+                                    <h3 class="text-md font-semibold text-[var(--text-bright)] leading-tight"
+                                        style="text-wrap: balance;">
+                                        <a href="#" @click.prevent="openModal(video)" class="hover:underline"
+                                            x-text="video.title"></a>
+                                    </h3>
                                 </div>
-                                <span class="block truncate text-xs mt-1 ml-2"
-                                    x-text="formatDateAgo(video.published, video.uploaded)"></span>
                             </div>
-                            <div class="flex shrink-0 items-center gap-0">
-                                <button class="p-1" @click.prevent="toggleFavorite(video)"
-                                    :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
-                                        class="material-icons" style="font-size: 20px;"
-                                        x-text="video.is_favorite ? 'star' : 'star_border'"></i></button>
-                                <button class="p-1" @click.prevent="toggleBookmark(video)"
-                                    :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
-                                        class="material-icons" style="font-size: 20px;"
-                                        x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
+                        </template>
+
+                        <template x-if="filterSettings.showFooter">
+                            <div
+                                class="flex items-center justify-between gap-2 border-t border-[var(--divider-color)] p-3 px-5 bg-[#182030]">
+                                <div class="min-w-0 flex-1 text-sm text-[var(--text-secondary)]">
+                                    <div class="flex items-center">
+                                        <a href="#" @click.prevent="setView('author', null, video.author)"
+                                            class="inline-block font-medium text-[var(--text-highlight)] px-2 py-0.5 rounded-full bg-[#233b4b] hover:bg-[#165357] transition-colors truncate flex-shrink"
+                                            x-text="video.author"></a>
+                                        <template x-if="video.is_short">
+                                            <a href="#"
+                                                @click.prevent.stop="currentView.type === 'shorts' ? setView('all') : setView('shorts')"
+                                                class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                                style="color: #FEDA8B; background-color: transparent; border: 1px solid #e16c39;"
+                                                onmouseover="this.style.borderColor='#fff8e8'"
+                                                onmouseout="this.style.borderColor='#e16c39'"
+                                                :title="currentView.type === 'shorts' ? 'Clear Shorts filter' : 'Filter by Shorts'">
+                                                Short
+                                            </a>
+                                        </template>
+                                        <template x-if="video.has_transcode">
+                                            <a href="#"
+                                                @click.prevent.stop="currentView.type === 'optimized' ? setView('all') : setView('optimized')"
+                                                class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                                style="color: #93c5fd; background-color: transparent; border: 1px solid #1e40af;"
+                                                onmouseover="this.style.borderColor='#dbeafe'"
+                                                onmouseout="this.style.borderColor='#1e40af'"
+                                                :title="currentView.type === 'optimized' ? 'Clear Optimized filter' : 'Filter by Optimized'">
+                                                Optimized
+                                            </a>
+                                        </template>
+                                        <template
+                                            x-if="video.video_type === 'VR180_SBS' || video.video_type === 'VR180_TB'">
+                                            <a href="#"
+                                                @click.prevent.stop="currentView.type === 'VR180' ? setView('all') : setView('VR180')"
+                                                class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                                style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
+                                                onmouseover="this.style.borderColor='#f5d0fe'"
+                                                onmouseout="this.style.borderColor='#701a75'"
+                                                :title="currentView.type === 'VR180' ? 'Clear VR180 filter' : 'Filter by VR180'">
+                                                VR180
+                                            </a>
+                                        </template>
+                                        <template x-if="video.video_type === 'VR360'">
+                                            <a href="#"
+                                                @click.prevent.stop="currentView.type === 'VR360' ? setView('all') : setView('VR360')"
+                                                class="inline-block text-xs font-medium px-2 py-0.5 rounded-full ml-1.5 transition-colors flex-shrink-0"
+                                                style="color: #f0abfc; background-color: transparent; border: 1px solid #701a75;"
+                                                onmouseover="this.style.borderColor='#f5d0fe'"
+                                                onmouseout="this.style.borderColor='#701a75'"
+                                                :title="currentView.type === 'VR360' ? 'Clear VR360 filter' : 'Filter by VR360'">
+                                                VR360
+                                            </a>
+                                        </template>
+                                    </div>
+                                    <span class="block truncate text-xs mt-1 ml-2"
+                                        x-text="formatDateAgo(video.published, video.uploaded)"></span>
+                                </div>
+                                <div class="flex shrink-0 items-center gap-0">
+                                    <button class="p-1" @click.prevent="toggleFavorite(video)"
+                                        :class="video.is_favorite ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
+                                            class="material-icons" style="font-size: 20px;"
+                                            x-text="video.is_favorite ? 'star' : 'star_border'"></i></button>
+                                    <button class="p-1" @click.prevent="toggleBookmark(video)"
+                                        :class="video.is_read_later ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-highlight)]'"><i
+                                            class="material-icons" style="font-size: 20px;"
+                                            x-text="video.is_read_later ? 'watch_later' : 'schedule'"></i></button>
+                                </div>
                             </div>
-                        </div>
+                        </template>
                     </div>
                 </template>
             </div>
@@ -515,7 +543,7 @@
             </button>
 
             <template x-if="modalVideo">
-                <div>
+                <div x-data="{ isMoreMenuOpen: false }">
                     <div class="relative">
                         <div class="p-0 bg-black relative z-10">
                             <video x-if="modalVideo" id="main-video-player"
@@ -563,6 +591,7 @@
                                     x-text="formatDateAgo(modalVideo.published, modalVideo.uploaded)">
                                 </div>
 
+                                <!-- Mobile Player Controls -->
                                 <div class="lg:hidden mt-4">
                                     <div class="grid grid-cols-6 gap-2 mb-2">
                                         <button @click.prevent="playPreviousVideo()" title="Previous Video"
@@ -623,85 +652,94 @@
                                             <i class="material-icons" style="font-size: 20px;">speed</i>
                                             <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                         </button>
-                                        <button
-                                            @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Scroll to file details">
-                                            <i class="material-icons" style="font-size: 20px;">info</i>
-                                            <span>More Info</span>
-                                        </button>
+                                        
+                                        <!-- Mobile "More Actions" Menu -->
+                                        <div class="relative">
+                                            <button @click="isMoreMenuOpen = !isMoreMenuOpen" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                                <i class="material-icons">more_vert</i>
+                                                <span>More Actions</span>
+                                            </button>
+                                            <div x-show="isMoreMenuOpen" @click.outside="isMoreMenuOpen = false"
+                                                x-transition:enter="transition ease-out duration-100"
+                                                x-transition:enter-start="opacity-0 scale-95"
+                                                x-transition:enter-end="opacity-100 scale-100"
+                                                x-transition:leave="transition ease-in duration-75"
+                                                x-transition:leave-start="opacity-100 scale-100"
+                                                x-transition:leave-end="opacity-0 scale-95"
+                                                class="absolute bottom-full right-0 z-10 mb-2 w-56 origin-bottom-right rounded-md bg-[var(--bg-darkest)] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                                                x-cloak>
+                                                <div class="py-1" role="none">
+                                                    <a href="#" @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
+                                                        <i class="material-icons" style="font-size: 20px;">info</i>
+                                                        <span>More Info</span>
+                                                    </a>
+                                                    <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                        <button @click.prevent="createCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                                            <span>Create Thumb</span>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                        <button @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                            <span>Remove Thumb</span>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="isCreatingThumb">
+                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                            <span>Working...</span>
+                                                        </span>
+                                                    </template>
+                                                    
+                                                    <div class="border-t border-[var(--divider-color)] my-1"></div>
 
-                                        <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
-                                            <button @click.prevent="createCustomThumb()"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
-                                                <span>Create Thumb</span>
-                                            </button>
-                                        </template>
-                                        <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
-                                            <button @click.prevent="deleteCustomThumb()"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                                <span>Remove Thumb</span>
-                                            </button>
-                                        </template>
-                                        <template x-if="isCreatingThumb">
-                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                                <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
-                                                <span>Working...</span>
-                                            </button>
-                                        </template>
-                                        
-                                        <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                            <button @click.prevent="startTranscode(modalVideo)"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons" style="font-size: 20px;">movie_filter</i>
-                                                <span>Optimize</span>
-                                            </button>
-                                        </template>
-                                        <template x-if="isCurrentlyTranscoding(modalVideo.id)">
-                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                                <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
-                                                <span>Optimizing...</span>
-                                            </button>
-                                        </template>
-                                        <template x-if="isQueued(modalVideo.id)">
-                                            <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                                <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
-                                                <span>Queued</span>
-                                            </button>
-                                        </template>
-                                        <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                            <button @click.prevent="deleteTranscode(modalVideo)"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                                <span>Remove Optimized</span>
-                                            </button>
-                                        </template>
-                                        
-                                        <template x-if="modalVideo.has_transcode">
-                                            <a :href="modalVideo.transcode_download_url"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                                title="Download optimized MP4">
-                                                <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
-                                                <span>Optimized</span>
-                                            </a>
-                                        </template>
-                                        <template x-if="modalVideo.youtube_id">
-                                            <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
-                                                target="_blank"
-                                                class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
-                                                title="Watch on YouTube">
-                                                <i class="material-icons" style="font-size: 20px;">smart_display</i>
-                                                <span>YouTube</span>
-                                            </a>
-                                        </template>
-                                        <button @click.prevent="cycleVideoTag(modalVideo)"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;"
-                                                x-text="getVideoTagIcon(modalVideo)"></i>
-                                            <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
-                                        </button>
+                                                    <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                        <button @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                                            <span>Optimize</span>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="isCurrentlyTranscoding(modalVideo.id)">
+                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                            <span>Optimizing...</span>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="isQueued(modalVideo.id)">
+                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
+                                                            <span>Queued</span>
+                                                        </span>
+                                                    </template>
+                                                    <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                        <button @click.prevent="deleteTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                            <span>Remove Optimized</span>
+                                                        </button>
+                                                    </template>
+                                                    <template x-if="modalVideo.has_transcode">
+                                                        <a :href="modalVideo.transcode_download_url" class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]" title="Download optimized MP4">
+                                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                                            <span>Download Optimized</span>
+                                                        </a>
+                                                    </template>
+
+                                                    <div class="border-t border-[var(--divider-color)] my-1"></div>
+                                                    
+                                                    <button @click.prevent="cycleVideoTag(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;" x-text="getVideoTagIcon(modalVideo)"></i>
+                                                        <span x-text="getVideoTagText(modalVideo)"></span>
+                                                    </button>
+                                                    <template x-if="modalVideo.youtube_id">
+                                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
+                                                            <i class="material-icons" style="font-size: 20px;">smart_display</i>
+                                                            <span>YouTube</span>
+                                                        </a>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -777,6 +815,7 @@
                                 </div>
                             </div>
 
+                            <!-- Desktop Player Controls -->
                             <div class="hidden lg:block lg:w-1/3 lg:mt-0">
                                 <div class="grid grid-cols-6 gap-2 mb-2">
                                     <button @click.prevent="playPreviousVideo()" title="Previous Video"
@@ -837,85 +876,94 @@
                                         <i class="material-icons" style="font-size: 20px;">speed</i>
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
-                                    <button
-                                        @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' })"
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                        title="Scroll to file details">
-                                        <i class="material-icons" style="font-size: 20px;">info</i>
-                                        <span>More Info</span>
-                                    </button>
+                                    
+                                    <!-- Desktop "More Actions" Menu -->
+                                    <div class="relative">
+                                        <button @click="isMoreMenuOpen = !isMoreMenuOpen" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                            <i class="material-icons">more_vert</i>
+                                            <span>More Actions</span>
+                                        </button>
+                                        <div x-show="isMoreMenuOpen" @click.outside="isMoreMenuOpen = false"
+                                            x-transition:enter="transition ease-out duration-100"
+                                            x-transition:enter-start="opacity-0 scale-95"
+                                            x-transition:enter-end="opacity-100 scale-100"
+                                            x-transition:leave="transition ease-in duration-75"
+                                            x-transition:leave-start="opacity-100 scale-100"
+                                            x-transition:leave-end="opacity-0 scale-95"
+                                            class="absolute top-full right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[var(--bg-darkest)] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
+                                            x-cloak>
+                                            <div class="py-1" role="none">
+                                                <a href="#" @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
+                                                    <i class="material-icons" style="font-size: 20px;">info</i>
+                                                    <span>More Info</span>
+                                                </a>
+                                                <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                    <button @click.prevent="createCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                                        <span>Create Thumb</span>
+                                                    </button>
+                                                </template>
+                                                <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                    <button @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                        <span>Remove Thumb</span>
+                                                    </button>
+                                                </template>
+                                                <template x-if="isCreatingThumb">
+                                                    <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                        <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                        <span>Working...</span>
+                                                    </span>
+                                                </template>
+                                                
+                                                <div class="border-t border-[var(--divider-color)] my-1"></div>
 
-                                    <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
-                                        <button @click.prevent="createCustomThumb()"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
-                                            <span>Create Thumb</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
-                                        <button @click.prevent="deleteCustomThumb()"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                            <span>Remove Thumb</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="isCreatingThumb">
-                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
-                                            <span>Working...</span>
-                                        </button>
-                                    </template>
-                                    
-                                    <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                        <button @click.prevent="startTranscode(modalVideo)"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">movie_filter</i>
-                                            <span>Optimize</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="isCurrentlyTranscoding(modalVideo.id)">
-                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
-                                            <span>Optimizing...</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="isQueued(modalVideo.id)">
-                                        <button disabled class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] text-[#9CA3AF] opacity-70">
-                                            <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
-                                            <span>Queued</span>
-                                        </button>
-                                    </template>
-                                    <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                        <button @click.prevent="deleteTranscode(modalVideo)"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
-                                            <span>Remove Optimized</span>
-                                        </button>
-                                    </template>
-                                    
-                                    <template x-if="modalVideo.has_transcode">
-                                        <a :href="modalVideo.transcode_download_url"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]"
-                                            title="Download optimized MP4">
-                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
-                                            <span>Optimized</span>
-                                        </a>
-                                    </template>
-                                    <template x-if="modalVideo.youtube_id">
-                                        <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
-                                            target="_blank"
-                                            class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF] yt-icon"
-                                            title="Watch on YouTube">
-                                            <i class="material-icons" style="font-size: 20px;">smart_display</i>
-                                            <span>YouTube</span>
-                                        </a>
-                                    </template>
-                                    <button @click.prevent="cycleVideoTag(modalVideo)"
-                                        class="flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                        <i class="material-icons" style="font-size: 20px;"
-                                            x-text="getVideoTagIcon(modalVideo)"></i>
-                                        <span x-text="getVideoTagText(modalVideo)" class="truncate min-w-0"></span>
-                                    </button>
+                                                <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                    <button @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                                        <span>Optimize</span>
+                                                    </button>
+                                                </template>
+                                                <template x-if="isCurrentlyTranscoding(modalVideo.id)">
+                                                    <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                        <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                        <span>Optimizing...</span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="isQueued(modalVideo.id)">
+                                                    <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                        <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
+                                                        <span>Queued</span>
+                                                    </span>
+                                                </template>
+                                                <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                    <button @click.prevent="deleteTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                        <span>Remove Optimized</span>
+                                                    </button>
+                                                </template>
+                                                <template x-if="modalVideo.has_transcode">
+                                                    <a :href="modalVideo.transcode_download_url" class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]" title="Download optimized MP4">
+                                                        <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                                        <span>Download Optimized</span>
+                                                    </a>
+                                                </template>
+
+                                                <div class="border-t border-[var(--divider-color)] my-1"></div>
+                                                
+                                                <button @click.prevent="cycleVideoTag(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                    <i class="material-icons" style="font-size: 20px;" x-text="getVideoTagIcon(modalVideo)"></i>
+                                                    <span x-text="getVideoTagText(modalVideo)"></span>
+                                                </button>
+                                                <template x-if="modalVideo.youtube_id">
+                                                    <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
+                                                        <i class="material-icons" style="font-size: 20px;">smart_display</i>
+                                                        <span>YouTube</span>
+                                                    </a>
+                                                </template>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1015,6 +1063,7 @@
                         </button>
                     </div>
     
+                    <!-- This is the new UI -->
                     <div class="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                         
                         <!-- Section 1: Author Checkboxes -->

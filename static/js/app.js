@@ -9,11 +9,11 @@ function videoApp() {
         isPlaylistModalOpen: false,
         isSmartPlaylistModalOpen: false,
         currentSmartPlaylist: null,
-        allAuthorsForFilter: [],
+        // allAuthorsForFilter: [], // REMOVED: Replaced with a getter
         isLoading: false,
 
         // --- Task Status ---
-        scanType: 'idle',
+        scanType: 'idle', // 'idle', 'new', 'full'
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
         isGeneratingThumbnails: false,
@@ -41,15 +41,16 @@ function videoApp() {
         sortOrder: 'aired_newest',
         appData: {
             videos: [],
-            allVideos: [],
+            // allVideos: [], // REMOVED: This was the source of the performance bug
             folder_tree: {},
             smartPlaylists: [],
             standardPlaylists: [],
-            authorCounts: {}
+            authorCounts: {},
+            currentAuthorPosterUrl: null // For author poster in header
         },
         filterHistory: [],
 
-        // --- NEW: Sidebar Collapse State ---
+        // --- Sidebar Collapse State ---
         sidebarState: {
             filterTags: true,
             standardPlaylists: true,
@@ -67,7 +68,10 @@ function videoApp() {
         filterSettings: {
             shorts: 'normal',
             vr: 'normal',
-            optimized: 'normal'
+            optimized: 'normal',
+            showTitles: true,
+            showFooter: true,
+            showDuration: true
         },
 
         // --- Init ---
@@ -76,12 +80,21 @@ function videoApp() {
             Alpine.store('globalState').openFolderPaths = [];
 
             // Load saved global filters
+            const defaultFilters = { shorts: 'normal', vr: 'normal', optimized: 'normal', showTitles: true, showFooter: true, showDuration: true };
             const savedFilters = localStorage.getItem('filterSettings');
             if (savedFilters) {
-                this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
+                // Merge saved settings on top of the defaults
+                this.filterSettings = Object.assign({}, defaultFilters, JSON.parse(savedFilters));
+            } else {
+                this.filterSettings = defaultFilters;
             }
+            // Save global filters on change
+            this.$watch('filterSettings', () => {
+                localStorage.setItem('filterSettings', JSON.stringify(this.filterSettings));
+            }, { deep: true });
 
-            // --- NEW: Load saved sidebar state ---
+
+            // Load saved sidebar state
             const savedSidebarState = localStorage.getItem('sidebarState');
             if (savedSidebarState) {
                 this.sidebarState = Object.assign({}, this.sidebarState, JSON.parse(savedSidebarState));
@@ -90,19 +103,21 @@ function videoApp() {
             this.$watch('sidebarState', () => {
                 localStorage.setItem('sidebarState', JSON.stringify(this.sidebarState));
             }, { deep: true });
-            // --- END NEW ---
 
-            // Watch filters and trigger a new search
+            // Watch core view filters
             this.$watch('searchQuery', () => this.fetchVideos(true));
             this.$watch('sortOrder', () => this.fetchVideos(true));
             this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
-            this.$watch('filterSettings', () => this.fetchVideos(true), { deep: true });
+            this.$watch('filterSettings', () => this.fetchVideos(true), { deep: true }); // Re-fetch on global filter change
 
             this.fetchMetadata();
             this.fetchVideos(true);
-            this.fetchAllVideosForCache();
+            // this.fetchAllVideosForCache(); // REMOVED: This was the performance bottleneck
             
+            // Check for running tasks *once* on load
             this.checkAllTaskStatuses();
+            
+            // The transcode poller is the only one that runs 24/7 (to manage the queue)
             this.startTranscodePolling(); 
 
             window.addEventListener('focus', () => {
@@ -174,19 +189,7 @@ function videoApp() {
             }
         },
 
-        async fetchAllVideosForCache() {
-            try {
-                if (this.appData.allVideos.length > 0) return;
-                const response = await fetch('/api/videos_all');
-                if (!response.ok) throw new Error('Failed to load all videos');
-                const data = await response.json();
-                this.appData.allVideos = data.articles || [];
-                this.allAuthorsForFilter = Array.from(new Set(this.appData.allVideos.map(v => v.author || 'Unknown Author')))
-                                                .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-            } catch (e) {
-                console.error('Error fetching all videos for cache:', e);
-            }
-        },
+        // REMOVED: fetchAllVideosForCache() was deleted to fix performance.
 
         async fetchVideos(isNewQuery = false) {
             if (this.isLoading) return;
@@ -203,10 +206,10 @@ function videoApp() {
 
             this.isLoading = true;
 
-            if (this.currentView.type === 'smart_playlist' && isNewQuery) {
-                 this.fetchAllVideosForCache();
-            }
+            // REMOVED: fetchAllVideosForCache() call for smart playlists
+            // if (this.currentView.type === 'smart_playlist' && isNewQuery) { ... }
 
+            // Standard Playlist Exception: Not paginated
             if (this.currentView.type === 'standard_playlist') {
                 this.isLoading = false; 
                 if (isNewQuery) {
@@ -231,6 +234,7 @@ function videoApp() {
                 return;
             }
 
+            // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
                 per_page: 30,
@@ -244,6 +248,7 @@ function videoApp() {
                 filterOptimized: this.filterSettings.optimized,
             });
 
+            // If it's a smart playlist, add the filters to the request
             if (this.currentView.type === 'smart_playlist' && this.currentView.id) {
                 const playlist = this.appData.smartPlaylists.find(p => p.id === this.currentView.id);
                 if (playlist && playlist.filters) {
@@ -267,11 +272,30 @@ function videoApp() {
             } finally {
                 this.isLoading = false;
             }
+            
+            // After a new author query, find the poster from the first video
+            if (isNewQuery && this.currentView.type === 'author') {
+                if (this.appData.videos.length > 0) {
+                    this.appData.currentAuthorPosterUrl = this.appData.videos[0].show_poster_url;
+                } else {
+                    this.appData.currentAuthorPosterUrl = null;
+                }
+            } else if (isNewQuery && this.currentView.type !== 'author') {
+                this.appData.currentAuthorPosterUrl = null;
+            }
         },
 
         // --- Computed Properties (Getters) ---
         get filteredVideos() {
+            // All filtering is now server-side. This getter is just a pass-through.
             return this.appData.videos;
+        },
+
+        // ADDED: New getter to replace the fetchAllVideosForCache() logic
+        get allAuthorsForFilter() {
+            if (!this.appData.authorCounts) return [];
+            return Object.keys(this.appData.authorCounts)
+                         .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
         },
 
         getEmptyMessage() {
@@ -350,6 +374,11 @@ function videoApp() {
             }
 
             return [];
+        },
+
+        // --- NEW: Sidebar Toggle Helper ---
+        toggleSidebarSection(section) {
+            this.sidebarState[section] = !this.sidebarState[section];
         },
 
         filterByFolderTag(tag) {
@@ -438,11 +467,14 @@ function videoApp() {
         },
         
         openSmartPlaylistSettings(playlist) {
+            // REMOVED: Check for allVideos length
+            /*
             if (this.appData.allVideos.length === 0) {
                 alert("Please wait for all videos to load before editing filters.");
                 this.fetchAllVideosForCache();
                 return;
             }
+            */
             this.currentSmartPlaylist = JSON.parse(JSON.stringify(playlist));
             this.isSmartPlaylistModalOpen = true;
         },
@@ -1192,26 +1224,39 @@ function videoApp() {
         },
 
         startTranscodePolling() {
+            // This is the queue manager. Start it if it's not already running.
             if (this.transcodePollInterval) return; 
+            
             console.log("Starting transcode queue poller.");
 
             this.transcodePollInterval = setInterval(async () => {
-                const response = await fetch('/api/transcode/status');
-                const data = await response.json();
-                const oldStatus = this.transcodeStatus.status;
-                const oldVideoId = this.transcodeStatus.video_id;
-                this.transcodeStatus = data;
+                try {
+                    const response = await fetch('/api/transcode/status');
+                    if (!response.ok) { throw new Error('Transcode poll failed'); }
+                    
+                    const data = await response.json();
+                    const oldStatus = this.transcodeStatus.status;
+                    const oldVideoId = this.transcodeStatus.video_id;
+                    this.transcodeStatus = data;
 
-                if (oldStatus !== 'idle' && data.status === 'idle') {
-                    console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
-                    this.refreshModalVideoData(oldVideoId);
-                    this.processTranscodeQueue();
-                }
-                else if (data.status === 'idle' && this.transcodeQueue.length > 0) {
-                    this.processTranscodeQueue();
-                }
-                else if (data.status === 'idle' && this.transcodeQueue.length === 0) {
-                    this.stopTranscodePolling();
+                    if (oldStatus !== 'idle' && data.status === 'idle') {
+                        // A job just finished
+                        console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
+                        this.refreshModalVideoData(oldVideoId);
+                        this.processTranscodeQueue();
+                    }
+                    else if (data.status === 'idle' && this.transcodeQueue.length > 0) {
+                        // Server is idle, but queue has items
+                        this.processTranscodeQueue();
+                    }
+                    else if (data.status === 'idle' && this.transcodeQueue.length === 0) {
+                        // Server is idle AND queue is empty. We can stop polling.
+                        this.stopTranscodePolling();
+                    }
+                    // else: a job is running, do nothing and wait for next poll
+                } catch (e) {
+                    console.error("Transcode poller error:", e);
+                    this.stopTranscodePolling(); // Stop polling on error
                 }
             }, 3000);
         },
@@ -1258,10 +1303,11 @@ function videoApp() {
             if (index !== -1) {
                 this.appData.videos[index] = updatedVideo;
             }
-            index = this.appData.allVideos.findIndex(v => v.id === updatedVideo.id);
-            if (index !== -1) {
-                this.appData.allVideos[index] = updatedVideo;
-            }
+            // REMOVED: allVideos update is no longer needed
+            // index = this.appData.allVideos.findIndex(v => v.id === updatedVideo.id);
+            // if (index !== -1) {
+            //     this.appData.allVideos[index] = updatedVideo;
+            // }
             if (this.modalVideo && this.modalVideo.id === updatedVideo.id) {
                 this.modalVideo = updatedVideo;
             }
@@ -1401,20 +1447,9 @@ function folderTree(tree, basePath = '') {
     }
 }
 
-// --- ALPINE INITIALIZATION ---
-document.addEventListener('alpine:init', () => {
-    Alpine.data('videoApp', videoApp);
-    Alpine.data('folderTree', folderTree);
-    Alpine.data('smartPlaylistEditor', smartPlaylistEditor); // Register the new editor
-
-    Alpine.store('globalState', {
-        openFolderPaths: [],
-        currentView: { type: 'all', id: null, author: null },
-    });
-});
-
 /**
  * Alpine.js component for the Smart Playlist Settings modal.
+ * THIS FUNCTION MUST BE DEFINED *BEFORE* THE 'alpine:init' LISTENER
  */
 function smartPlaylistEditor(playlist, allAuthors) {
     return {
@@ -1527,3 +1562,15 @@ function smartPlaylistEditor(playlist, allAuthors) {
         }
     };
 }
+
+// --- ALPINE INITIALIZATION ---
+document.addEventListener('alpine:init', () => {
+    Alpine.data('videoApp', videoApp);
+    Alpine.data('folderTree', folderTree);
+    Alpine.data('smartPlaylistEditor', smartPlaylistEditor); // Register the new editor
+
+    Alpine.store('globalState', {
+        openFolderPaths: [],
+        currentView: { type: 'all', id: null, author: null },
+    });
+});
