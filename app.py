@@ -60,7 +60,7 @@ CLEANUP_STATUS = {"status": "idle", "message": "", "progress": 0}
 class Video(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(300), nullable=False)
-    show_title = db.Column(db.String(200))
+    show_title = db.Column(db.String(200), index=True)
     summary = db.Column(db.Text)
     video_path = db.Column(db.String(1000), unique=True, nullable=False)
     relative_path = db.Column(db.String(1000), index=True, nullable=True)
@@ -70,12 +70,12 @@ class Video(db.Model):
     subtitle_path = db.Column(db.String(1000), nullable=True)
     subtitle_label = db.Column(db.String(50), nullable=True)
     subtitle_lang = db.Column(db.String(10), nullable=True)
-    aired = db.Column(db.DateTime(timezone=False))
-    uploaded_date = db.Column(db.DateTime(timezone=False))
+    aired = db.Column(db.DateTime(timezone=False), index=True)
+    uploaded_date = db.Column(db.DateTime(timezone=False), index=True)
     youtube_id = db.Column(db.String(100), nullable=True)
-    is_favorite = db.Column(db.Boolean, default=False)
-    is_watch_later = db.Column(db.Boolean, default=False)
-    last_watched = db.Column(db.DateTime(timezone=False), nullable=True)
+    is_favorite = db.Column(db.Boolean, default=False, index=True)
+    is_watch_later = db.Column(db.Boolean, default=False, index=True)
+    last_watched = db.Column(db.DateTime(timezone=False), nullable=True, index=True)
     watched_duration = db.Column(db.Integer, default=0)
 
     # Technical Info
@@ -83,12 +83,12 @@ class Video(db.Model):
     file_size = db.Column(db.BigInteger, nullable=True)
     file_format = db.Column(db.String(10), nullable=True)
     has_nfo = db.Column(db.Boolean, default=False)
-    is_short = db.Column(db.Boolean, default=False)
+    is_short = db.Column(db.Boolean, default=False, index=True)
     dimensions = db.Column(db.String(100), nullable=True)
     duration = db.Column(db.Integer, default=0)
     video_codec = db.Column(db.String(50), nullable=True)
-    transcoded_path = db.Column(db.String(1000), nullable=True)
-    video_type = db.Column(db.String(50), nullable=True)
+    transcoded_path = db.Column(db.String(1000), nullable=True, index=True)
+    video_type = db.Column(db.String(50), nullable=True, index=True)
 
     def to_dict(self):
         """Serializes the Video object to a dictionary for the frontend API."""

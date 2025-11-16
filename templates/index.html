@@ -85,177 +85,196 @@
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
                 
                 <div class="pt-2" x-cloak>
-                    <h3 class="px-3 text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
-                    <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
-                        <button x-show="filterHistory.length > 0" @click.prevent="goBackOneFilter()"
-                            class="inline-flex items-center justify-center h-7 w-7 rounded-full text-[var(--text-main)] hover:text-[var(--text-bright)] hover:bg-[var(--bg-highlight)]/50 transition-colors"
-                            title="Go back one step (Filter History)">
-                            <span class="material-icons" style="font-size: 20px;">arrow_back</span>
-                        </button>
-                        <a href="#" @click.prevent="filterByFolderTag('clear_all')"
-                            x-show="currentView.type === 'folder' && currentView.id"
-                            class="inline-block text-sm font-medium text-[var(--text-main)] hover:text-white px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                            style="background-color: #6B7280;" title="Clear Folder Filter">
-                            Clear All
-                        </a>
-                        <template x-for="tag in getDynamicTags" :key="tag">
-                            <a href="#" @click.prevent="filterByFolderTag(tag)" @dragstart="startDrag(tag)"
-                                draggable="true"
-                                class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
-                                x-text="tag.replace(/_/g, ' ')" :title="'Filter by: ' + tag.replace(/_/g, ' ') + ' (Drag to Playlist)'">
+                    <button @click="sidebarState.filterTags = !sidebarState.filterTags" class="w-full flex items-center justify-between px-3 py-1">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Filter Tags</h3>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.filterTags}">expand_more</i>
+                    </button>
+                    <div x-show="sidebarState.filterTags" x-collapse>
+                        <div class="mt-1 flex flex-wrap gap-2 px-3 pb-3">
+                            <button x-show="filterHistory.length > 0" @click.prevent="goBackOneFilter()"
+                                class="inline-flex items-center justify-center h-7 w-7 rounded-full text-[var(--text-main)] hover:text-[var(--text-bright)] hover:bg-[var(--bg-highlight)]/50 transition-colors"
+                                title="Go back one step (Filter History)">
+                                <span class="material-icons" style="font-size: 20px;">arrow_back</span>
+                            </button>
+                            <a href="#" @click.prevent="filterByFolderTag('clear_all')"
+                                x-show="currentView.type === 'folder' && currentView.id"
+                                class="inline-block text-sm font-medium text-[var(--text-main)] hover:text-white px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
+                                style="background-color: #6B7280;" title="Clear Folder Filter">
+                                Clear All
                             </a>
-                        </template>
-                        <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
-                            <p class="text-xs italic text-[var(--text-secondary)]">Tags only available for All Videos/Folders.</p>
-                        </template>
-                        <template
-                            x-if="getDynamicTags.length === 0 && (currentView.type === 'all' || currentView.type === 'folder')">
-                            <p class="text-xs italic text-[var(--text-secondary)]">No deeper tags available.</p>
-                        </template>
+                            <template x-for="tag in getDynamicTags" :key="tag">
+                                <a href="#" @click.prevent="filterByFolderTag(tag)"
+                                    class="inline-block text-sm font-medium text-[var(--text-highlight)] bg-[#233b4b] hover:bg-[#165357] px-2 py-0.5 rounded-full cursor-pointer transition-colors duration-150"
+                                    x-text="tag.replace(/_/g, ' ')" :title="'Filter by: ' + tag.replace(/_/g, ' ')">
+                                </a>
+                            </template>
+                            <template x-if="currentView.type !== 'all' && currentView.type !== 'folder'">
+                                <p class="text-xs italic text-[var(--text-secondary)]">Tags only available for All Videos/Folders.</p>
+                            </template>
+                            <template
+                                x-if="getDynamicTags.length === 0 && (currentView.type === 'all' || currentView.type === 'folder')">
+                                <p class="text-xs italic text-[var(--text-secondary)]">No deeper tags available.</p>
+                            </template>
+                        </div>
                     </div>
                 </div>
 
                 <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
-                    <div class="flex items-center justify-between px-3 mb-1">
+                    <button @click="sidebarState.standardPlaylists = !sidebarState.standardPlaylists" class="w-full flex items-center justify-between px-3 py-1">
                         <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Playlists</h3>
-                    </div>
-                    <div class="flex items-center gap-1 px-3 mb-2">
-                        <input type="text" x-model="newPlaylistName"
-                            @keydown.enter="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
-                            placeholder="Create new playlist..."
-                            class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
-                        <button @click="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
-                            :disabled="newPlaylistName.trim() === ''"
-                            class="p-1 text-[var(--text-secondary)] transition-colors"
-                            :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
-                            title="Create New Playlist">
-                            <i class="material-icons" style="font-size: 20px;">add</i>
-                        </button>
-                    </div>
-                    <div class="mt-1 space-y-1">
-                        <template x-for="playlist in appData.standardPlaylists" :key="playlist.id">
-                            <a href="#" @click.prevent="setView('standard_playlist', playlist.id)"
-                                class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
-                                :class="currentView.type === 'standard_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
-                                <i class="material-icons" style="font-size:20px;">queue_music</i>
-                                <span class="truncate flex-1" x-text="playlist.name"></span>
-                            </a>
-                        </template>
-                        <p x-show="appData.standardPlaylists.length === 0"
-                            class="px-3 text-xs italic text-[var(--text-secondary)]">Create a playlist above.</p>
-                    </div>
-                </div>
-
-                <hr class="border-[var(--divider-color)] mx-4 my-2">
-
-                <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
-                    <div class="flex items-center justify-between px-3 mb-1">
-                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
-                    </div>
-                    <div class="flex items-center gap-1 px-3 mb-2">
-                        <input type="text" x-model="newPlaylistName"
-                            @keydown.enter="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
-                            placeholder="Create smart playlist..."
-                            class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
-                        <button @click="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
-                            :disabled="newPlaylistName.trim() === ''"
-                            class="p-1 text-[var(--text-secondary)] transition-colors"
-                            :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
-                            title="Create New Smart Playlist">
-                            <i class="material-icons" style="font-size: 20px;">add</i>
-                        </button>
-                    </div>
-                    <div class="mt-1 space-y-1">
-                        <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
-                            <div class="relative group">
-                                <a href="#" @click.prevent="setView('smart_playlist', playlist.id)"
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.standardPlaylists}">expand_more</i>
+                    </button>
+                    <div x-show="sidebarState.standardPlaylists" x-collapse>
+                        <div class="flex items-center gap-1 px-3 mt-1 mb-2">
+                            <input type="text" x-model="newPlaylistName"
+                                @keydown.enter="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
+                                placeholder="Create new playlist..."
+                                class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
+                            <button @click="createStandardPlaylist(newPlaylistName); newPlaylistName=''"
+                                :disabled="newPlaylistName.trim() === ''"
+                                class="p-1 text-[var(--text-secondary)] transition-colors"
+                                :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
+                                title="Create New Playlist">
+                                <i class="material-icons" style="font-size: 20px;">add</i>
+                            </button>
+                        </div>
+                        <div class="mt-1 space-y-1">
+                            <template x-for="playlist in appData.standardPlaylists" :key="playlist.id">
+                                <a href="#" @click.prevent="setView('standard_playlist', playlist.id)"
                                     class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
-                                    :class="currentView.type === 'smart_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
-                                    <i class="material-icons" style="font-size:20px;">playlist_play</i>
+                                    :class="currentView.type === 'standard_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
+                                    <i class="material-icons" style="font-size:20px;">queue_music</i>
                                     <span class="truncate flex-1" x-text="playlist.name"></span>
                                 </a>
-                                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-                                    <button @click.stop.prevent="openSmartPlaylistSettings(playlist)"
-                                        class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
-                                        title="Smart Playlist Settings">
-                                        <i class="material-icons" style="font-size: 18px;">settings</i>
-                                    </button>
-                                    <button @click.stop.prevent="renameSmartPlaylist(playlist)"
-                                        class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
-                                        title="Rename Playlist">
-                                        <i class="material-icons" style="font-size: 18px;">edit</i>
-                                    </button>
-                                    <button @click.stop.prevent="deleteSmartPlaylist(playlist.id)"
-                                        class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
-                                        title="Delete Playlist">
-                                        <i class="material-icons" style="font-size: 18px;">delete</i>
-                                    </button>
-                                </div>
-                            </div>
-                        </template>
-                        <p x-show="appData.smartPlaylists.length === 0"
-                            class="px-3 text-xs italic text-[var(--text-secondary)]">Create a smart playlist above.</p>
+                            </template>
+                            <p x-show="appData.standardPlaylists.length === 0"
+                                class="px-3 text-xs italic text-[var(--text-secondary)]">Create a playlist above.</p>
+                        </div>
                     </div>
                 </div>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
 
-                <div class="pt-2 px-4 pb-2 space-y-2" x-cloak>
-                    <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Global Filters</h3>
-                    <button @click="cycleShortsFilter()"
-                        class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                        <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
-                                'text-[var(--text-highlight)]': filterSettings.shorts === 'solo',
-                                'text-red-500': filterSettings.shorts === 'hide'
-                           }">ondemand_video</i>
-                        <span>Shorts</span>
+                <div class="pt-2" x-data="{ newPlaylistName: '' }" x-cloak>
+                    <button @click="sidebarState.smartPlaylists = !sidebarState.smartPlaylists" class="w-full flex items-center justify-between px-3 py-1">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Smart Playlists</h3>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.smartPlaylists}">expand_more</i>
                     </button>
-                    <button @click="cycleVRFilter()"
-                        class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                        <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
-                                'text-[var(--text-highlight)]': filterSettings.vr === 'solo',
-                                'text-red-500': filterSettings.vr === 'hide'
-                           }">view_in_ar</i>
-                        <span>3D / VR</span>
+                    <div x-show="sidebarState.smartPlaylists" x-collapse>
+                        <div class="flex items-center gap-1 px-3 mt-1 mb-2">
+                            <input type="text" x-model="newPlaylistName"
+                                @keydown.enter="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
+                                placeholder="Create smart playlist..."
+                                class="flex-1 w-full rounded-md border border-[var(--divider-color)] bg-[var(--bg-darkest)] text-sm text-[var(--text-bright)] placeholder-[var(--text-secondary)] focus:border-[var(--highlight-ring)] focus:ring-[var(--highlight-ring)] p-1.5">
+                            <button @click="createSmartPlaylist(newPlaylistName); newPlaylistName=''"
+                                :disabled="newPlaylistName.trim() === ''"
+                                class="p-1 text-[var(--text-secondary)] transition-colors"
+                                :class="{ 'hover:text-[var(--text-bright)]': newPlaylistName.trim() !== '', 'opacity-50 cursor-not-allowed': newPlaylistName.trim() === '' }"
+                                title="Create New Smart Playlist">
+                                <i class="material-icons" style="font-size: 20px;">add</i>
+                            </button>
+                        </div>
+                        <div class="mt-1 space-y-1">
+                            <template x-for="playlist in appData.smartPlaylists" :key="playlist.id">
+                                <div class="relative group">
+                                    <a href="#" @click.prevent="setView('smart_playlist', playlist.id)"
+                                        class="flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-100 hover:bg-[var(--bg-highlight)]/50"
+                                        :class="currentView.type === 'smart_playlist' && currentView.id === playlist.id ? 'main-nav-selected' : 'text-[var(--text-main)]'">
+                                        <i class="material-icons" style="font-size:20px;">playlist_play</i>
+                                        <span class="truncate flex-1" x-text="playlist.name"></span>
+                                    </a>
+                                    <div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <button @click.stop.prevent="openSmartPlaylistSettings(playlist)"
+                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-cyan-400 transition-colors"
+                                            title="Smart Playlist Settings">
+                                            <i class="material-icons" style="font-size: 18px;">settings</i>
+                                        </button>
+                                        <button @click.stop.prevent="renameSmartPlaylist(playlist)"
+                                            class="p-0.5 -m-0.5 text-[var(--text-secondary)] hover:text-[var(--text-highlight)] transition-colors"
+                                            title="Rename Playlist">
+                                            <i class="material-icons" style="font-size: 18px;">edit</i>
+                                        </button>
+                                        <button @click.stop.prevent="deleteSmartPlaylist(playlist.id)"
+                                            class="p-0.5 -m-0.5 text-red-500 hover:text-red-400 transition-colors"
+                                            title="Delete Playlist">
+                                            <i class="material-icons" style="font-size: 18px;">delete</i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </template>
+                            <p x-show="appData.smartPlaylists.length === 0"
+                                class="px-3 text-xs italic text-[var(--text-secondary)]">Create a smart playlist above.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <hr class="border-[var(--divider-color)] mx-4 my-2">
+
+                <div class="pt-2" x-cloak>
+                    <button @click="sidebarState.globalFilters = !sidebarState.globalFilters" class="w-full flex items-center justify-between px-3 py-1">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Global Filters</h3>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.globalFilters}">expand_more</i>
                     </button>
-                    <button @click="cycleOptimizedFilter()"
-                        class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                        <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
-                                'text-[var(--text-highlight)]': filterSettings.optimized === 'solo',
-                                'text-red-500': filterSettings.optimized === 'hide'
-                           }">movie_filter</i>
-                        <span>Optimized</span>
-                    </button>
+                    <div x-show="sidebarState.globalFilters" x-collapse class="px-4 pt-2 pb-2 space-y-2">
+                        <button @click="cycleShortsFilter()"
+                            class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                            <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
+                                    'text-[var(--text-highlight)]': filterSettings.shorts === 'solo',
+                                    'text-red-500': filterSettings.shorts === 'hide'
+                               }">ondemand_video</i>
+                            <span>Shorts</span>
+                        </button>
+                        <button @click="cycleVRFilter()"
+                            class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                            <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
+                                    'text-[var(--text-highlight)]': filterSettings.vr === 'solo',
+                                    'text-red-500': filterSettings.vr === 'hide'
+                               }">view_in_ar</i>
+                            <span>3D / VR</span>
+                        </button>
+                        <button @click="cycleOptimizedFilter()"
+                            class="flex w-full items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                            <i class="material-icons transition-colors" style="font-size: 20px;" :class="{
+                                    'text-[var(--text-highlight)]': filterSettings.optimized === 'solo',
+                                    'text-red-500': filterSettings.optimized === 'hide'
+                               }">movie_filter</i>
+                            <span>Optimized</span>
+                        </button>
+                    </div>
                 </div>
 
                 <hr class="border-[var(--divider-color)] mx-4 my-2">
                 
-                <div class="pt-2 px-4 pb-4 space-y-2" x-cloak>
-                    <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)] mb-2">Library Tools</h3>
-                    
-                    <button @click="scanNewVideos()" :disabled="isAnyTaskRunning()"
-                        class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
-                        <span x-text="scanType === 'new' ? 'Scanning New...' : 'Scan New Videos'"></span>
+                <div class="pt-2" x-cloak>
+                     <button @click="sidebarState.libraryTools = !sidebarState.libraryTools" class="w-full flex items-center justify-between px-3 py-1">
+                        <h3 class="text-xs font-semibold uppercase text-[var(--text-secondary)]">Library Tools</h3>
+                        <i class="material-icons text-[var(--text-secondary)] transition-transform" :class="{'rotate-180': !sidebarState.libraryTools}">expand_more</i>
                     </button>
+                    <div x-show="sidebarState.libraryTools" x-collapse class="px-4 pt-2 pb-4 space-y-2">
+                        <button @click="scanNewVideos()" :disabled="isAnyTaskRunning()"
+                            class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'new' }">video_file</i>
+                            <span x-text="scanType === 'new' ? 'Scanning New...' : 'Scan New Videos'"></span>
+                        </button>
 
-                    <button @click="generateMissingThumbnails()" :disabled="isAnyTaskRunning()"
-                        class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
-                        <span x-text="isGeneratingThumbnails ? libraryTaskButtonText : 'Gen. Missing Thumbs'"></span>
-                    </button>
+                        <button @click="generateMissingThumbnails()" :disabled="isAnyTaskRunning()"
+                            class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isGeneratingThumbnails }">image</i>
+                            <span x-text="isGeneratingThumbnails ? libraryTaskButtonText : 'Gen. Missing Thumbs'"></span>
+                        </button>
 
-                    <button @click="cleanupLibrary()" :disabled="isAnyTaskRunning()"
-                        class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
-                        <span x-text="isCleaningUp ? 'Pruning...' : 'Prune Library'"></span>
-                    </button>
-                    
-                    <button @click="scanFullLibrary()" :disabled="isAnyTaskRunning()"
-                        class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
-                        <span x-text="scanType === 'full' ? 'Scanning All...' : 'Scan Entire Library'"></span>
-                    </button>
+                        <button @click="cleanupLibrary()" :disabled="isAnyTaskRunning()"
+                            class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': isCleaningUp }">delete_sweep</i>
+                            <span x-text="isCleaningUp ? 'Pruning...' : 'Prune Library'"></span>
+                        </button>
+                        
+                        <button @click="scanFullLibrary()" :disabled="isAnyTaskRunning()"
+                            class="w-full flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium transition-colors duration-300 bg-[var(--bg-darkest)] text-[var(--text-highlight)] hover:bg-[var(--divider-color)] disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i class="material-icons" style="font-size:20px;" :class="{ 'animate-spin': scanType === 'full' }">manage_search</i>
+                            <span x-text="scanType === 'full' ? 'Scanning All...' : 'Scan Entire Library'"></span>
+                        </button>
+                    </div>
                 </div>
             </nav>
         </aside>
@@ -967,7 +986,6 @@
     </div>
 
     <!-- Smart Playlist Settings Modal -->
-    <!-- Smart Playlist Settings Modal -->
     <div x-show="isSmartPlaylistModalOpen" @keydown.escape.window="closeSmartPlaylistSettings()"
         class="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/80 p-4" x-cloak>
         
@@ -986,7 +1004,6 @@
             x-transition:leave-end="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
             @click.outside="closeSmartPlaylistSettings()">
             
-            <!-- This template ensures the editor is re-initialized every time the modal opens -->
             <template x-if="currentSmartPlaylist">
                 <div x-data="smartPlaylistEditor(currentSmartPlaylist, allAuthorsForFilter)">
                     <div class="flex items-center justify-between p-4 border-b border-[var(--divider-color)]">
@@ -998,13 +1015,12 @@
                         </button>
                     </div>
     
-                    <!-- This is the new UI -->
                     <div class="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
                         
                         <!-- Section 1: Author Checkboxes -->
                         <div>
                             <h4 class="text-sm font-semibold text-[var(--text-highlight)] mb-2">Filter by Author / Channel</h4>
-                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] max-h-60 overflow-y-auto space-y-2 pr-2">
+                            <div class="p-4 rounded-lg bg-[var(--bg-medium)] max-h-60 overflow-y-auto space-y-2 pr-2 border border-[var(--divider-color)]">
                                 <template x-for="author in allAuthors" :key="author">
                                     <label class="flex items-center gap-3 p-2 rounded-md hover:bg-[var(--bg-highlight)]/50 cursor-pointer">
                                         <input type="checkbox" 
@@ -1014,6 +1030,9 @@
                                         <span class="text-sm font-medium text-[var(--text-main)]" x-text="author"></span>
                                     </label>
                                 </template>
+                                <p x-show="allAuthors.length === 0" class="text-sm italic text-[var(--text-secondary)]">
+                                    Loading authors...
+                                </p>
                             </div>
                         </div>
 
@@ -1024,7 +1043,7 @@
                             <!-- List of existing advanced rules -->
                             <div class="space-y-2 mb-3" x-show="otherFilters.length > 0">
                                 <template x-for="filter in otherFilters" :key="filter.id">
-                                    <div class="flex items-center justify-between p-2 rounded-md bg-[var(--bg-medium)]">
+                                    <div class="flex items-center justify-between p-2 rounded-md bg-[var(--bg-medium)] border border-[var(--divider-color)]">
                                         <span class="text-sm text-[var(--text-main)]" x-text="getRuleLabel(filter)"></span>
                                         <button @click="removeRule(filter.id)" class="p-1 -m-1 text-red-500 hover:text-red-400" title="Remove rule">
                                             <i class="material-icons" style="font-size: 18px;">close</i>

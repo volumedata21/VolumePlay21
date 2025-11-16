@@ -6,14 +6,14 @@ function videoApp() {
         // --- State Variables ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isPlaylistModalOpen: false, // For "Add to Playlist"
-        isSmartPlaylistModalOpen: false, // For "Smart Playlist Settings"
-        currentSmartPlaylist: null, // Holds the playlist being edited
-        allAuthorsForFilter: [], // Holds all authors for the filter modal
+        isPlaylistModalOpen: false,
+        isSmartPlaylistModalOpen: false,
+        currentSmartPlaylist: null,
+        allAuthorsForFilter: [],
         isLoading: false,
 
         // --- Task Status ---
-        scanType: 'idle', // 'idle', 'new', 'full'
+        scanType: 'idle',
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
         isGeneratingThumbnails: false,
@@ -41,13 +41,22 @@ function videoApp() {
         sortOrder: 'aired_newest',
         appData: {
             videos: [],
-            allVideos: [], // Cache for smart playlist author list
+            allVideos: [],
             folder_tree: {},
             smartPlaylists: [],
             standardPlaylists: [],
             authorCounts: {}
         },
         filterHistory: [],
+
+        // --- NEW: Sidebar Collapse State ---
+        sidebarState: {
+            filterTags: true,
+            standardPlaylists: true,
+            smartPlaylists: true,
+            globalFilters: true,
+            libraryTools: true
+        },
 
         // --- Pagination State ---
         currentPage: 1,
@@ -66,11 +75,24 @@ function videoApp() {
             Alpine.store('globalState').currentView = this.currentView;
             Alpine.store('globalState').openFolderPaths = [];
 
+            // Load saved global filters
             const savedFilters = localStorage.getItem('filterSettings');
             if (savedFilters) {
                 this.filterSettings = Object.assign({}, this.filterSettings, JSON.parse(savedFilters));
             }
 
+            // --- NEW: Load saved sidebar state ---
+            const savedSidebarState = localStorage.getItem('sidebarState');
+            if (savedSidebarState) {
+                this.sidebarState = Object.assign({}, this.sidebarState, JSON.parse(savedSidebarState));
+            }
+            // Save sidebar state on change
+            this.$watch('sidebarState', () => {
+                localStorage.setItem('sidebarState', JSON.stringify(this.sidebarState));
+            }, { deep: true });
+            // --- END NEW ---
+
+            // Watch filters and trigger a new search
             this.$watch('searchQuery', () => this.fetchVideos(true));
             this.$watch('sortOrder', () => this.fetchVideos(true));
             this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
@@ -78,12 +100,9 @@ function videoApp() {
 
             this.fetchMetadata();
             this.fetchVideos(true);
-            this.fetchAllVideosForCache(); // Pre-fetch all video data for filters
+            this.fetchAllVideosForCache();
             
-            // Check for running tasks *once* on load
             this.checkAllTaskStatuses();
-            
-            // The transcode poller is the only one that runs 24/7 (to manage the queue)
             this.startTranscodePolling(); 
 
             window.addEventListener('focus', () => {
@@ -185,10 +204,9 @@ function videoApp() {
             this.isLoading = true;
 
             if (this.currentView.type === 'smart_playlist' && isNewQuery) {
-                 this.fetchAllVideosForCache(); // Pre-load all authors for modal
+                 this.fetchAllVideosForCache();
             }
 
-            // Standard Playlist Exception: Not paginated
             if (this.currentView.type === 'standard_playlist') {
                 this.isLoading = false; 
                 if (isNewQuery) {
@@ -213,7 +231,6 @@ function videoApp() {
                 return;
             }
 
-            // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
                 per_page: 30,
@@ -227,7 +244,6 @@ function videoApp() {
                 filterOptimized: this.filterSettings.optimized,
             });
 
-            // If it's a smart playlist, add the filters to the request
             if (this.currentView.type === 'smart_playlist' && this.currentView.id) {
                 const playlist = this.appData.smartPlaylists.find(p => p.id === this.currentView.id);
                 if (playlist && playlist.filters) {
@@ -255,7 +271,6 @@ function videoApp() {
 
         // --- Computed Properties (Getters) ---
         get filteredVideos() {
-            // All filtering is now server-side. This getter is just a pass-through.
             return this.appData.videos;
         },
 
@@ -898,7 +913,7 @@ function videoApp() {
         async scanNewVideos() {
             if (this.isAnyTaskRunning()) return;
             this.scanType = 'new';
-            this.isScanning = true;
+            this.isScanning = true; 
             try {
                 const response = await fetch('/api/scan_videos', {
                     method: 'POST',
@@ -928,7 +943,7 @@ function videoApp() {
             this.scanType = 'full';
             this.isScanning = true;
             try {
-                const response = await fetch('/api/scan_videos', {
+                const response = await fetch('/api/scan_videos', { 
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ full_scan: true })
@@ -949,7 +964,7 @@ function videoApp() {
         },
 
         startScanPolling() {
-            if (this.scanPollInterval) return; // Poller is already running
+            if (this.scanPollInterval) return;
             console.log("Starting scan poller.");
             
             const poll = async () => {
@@ -1177,9 +1192,7 @@ function videoApp() {
         },
 
         startTranscodePolling() {
-            // This is the queue manager. Start it if it's not already running.
             if (this.transcodePollInterval) return; 
-            
             console.log("Starting transcode queue poller.");
 
             this.transcodePollInterval = setInterval(async () => {
@@ -1190,21 +1203,16 @@ function videoApp() {
                 this.transcodeStatus = data;
 
                 if (oldStatus !== 'idle' && data.status === 'idle') {
-                    // A job just finished
                     console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
                     this.refreshModalVideoData(oldVideoId);
                     this.processTranscodeQueue();
                 }
                 else if (data.status === 'idle' && this.transcodeQueue.length > 0) {
-                    // Server is idle, but queue has items
                     this.processTranscodeQueue();
                 }
                 else if (data.status === 'idle' && this.transcodeQueue.length === 0) {
-                    // Server is idle AND queue is empty. We can stop polling.
                     this.stopTranscodePolling();
                 }
-                // else: a job is running, do nothing and wait for next poll
-                
             }, 3000);
         },
 
@@ -1484,14 +1492,14 @@ function smartPlaylistEditor(playlist, allAuthors) {
                     return `Title contains (any of): [${filter.value.join(', ')}]`;
                 case 'duration':
                     const operator = filter.operator === 'gt' ? '>' : '<';
-                    // Convert seconds back to minutes for display
+                    // Convert seconds back to minutes/hours for display
                     const value = filter.value;
                     let displayValue = value;
                     let displayUnit = 'seconds';
-                    if (value % 3600 === 0) {
+                    if (value > 0 && value % 3600 === 0) {
                         displayValue = value / 3600;
                         displayUnit = 'hours';
-                    } else if (value % 60 === 0) {
+                    } else if (value > 0 && value % 60 === 0) {
                         displayValue = value / 60;
                         displayUnit = 'minutes';
                     }
