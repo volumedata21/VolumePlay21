@@ -6,14 +6,14 @@ function videoApp() {
         // --- State Variables ---
         isMobileMenuOpen: false,
         isModalOpen: false,
-        isPlaylistModalOpen: false,
-        isSmartPlaylistModalOpen: false, // [NEW]
-        currentSmartPlaylist: null,     // [NEW] Holds the playlist being edited
-        allAuthorsForFilter: [],      // [NEW] Holds authors for the filter modal
+        isPlaylistModalOpen: false, // For "Add to Playlist"
+        isSmartPlaylistModalOpen: false, // For "Smart Playlist Settings"
+        currentSmartPlaylist: null, // Holds the playlist being edited
+        allAuthorsForFilter: [], // Holds all authors for the filter modal
         isLoading: false,
 
         // --- Task Status ---
-        scanType: 'idle',
+        scanType: 'idle', // 'idle', 'new', 'full'
         scanStatus: { status: 'idle', message: '', progress: 0 },
         scanPollInterval: null,
         isGeneratingThumbnails: false,
@@ -41,7 +41,7 @@ function videoApp() {
         sortOrder: 'aired_newest',
         appData: {
             videos: [],
-            allVideos: [], // [MODIFIED] Still used for author list, but not filtering
+            allVideos: [], // Cache for smart playlist author list
             folder_tree: {},
             smartPlaylists: [],
             standardPlaylists: [],
@@ -78,12 +78,13 @@ function videoApp() {
 
             this.fetchMetadata();
             this.fetchVideos(true);
-            this.fetchAllVideosForCache(); // [NEW] Pre-fetch all video data for filters
+            this.fetchAllVideosForCache(); // Pre-fetch all video data for filters
             
-            this.startScanPolling();
-            this.startThumbnailPolling();
-            this.startCleanupPolling();
-            this.startTranscodePolling();
+            // Check for running tasks *once* on load
+            this.checkAllTaskStatuses();
+            
+            // The transcode poller is the only one that runs 24/7 (to manage the queue)
+            this.startTranscodePolling(); 
 
             window.addEventListener('focus', () => {
                 if (!this.isAnyTaskRunning()) {
@@ -92,10 +93,48 @@ function videoApp() {
             });
 
             setInterval(() => {
-                if (!this.isModalOpen && !this.isPlaylistModalOpen && !this.isAnyTaskRunning()) {
+                if (!this.isModalOpen && !this.isPlaylistModalOpen && !this.isSmartPlaylistModalOpen && !this.isAnyTaskRunning()) {
                     this.fetchVideos(true);
                 }
             }, 3600000);
+        },
+
+        // --- Check status on boot ---
+        async checkAllTaskStatuses() {
+            try {
+                // Check for running scans
+                let response = await fetch('/api/scan/status');
+                let data = await response.json();
+                if (data.status !== 'idle') {
+                    console.log("Found a running scan on load. Starting poller.");
+                    this.isScanning = true;
+                    this.scanType = data.message.includes('Full') ? 'full' : 'new';
+                    this.scanStatus = data;
+                    this.startScanPolling();
+                }
+
+                // Check for running thumbnail generation
+                response = await fetch('/api/thumbnails/status');
+                data = await response.json();
+                if (data.status !== 'idle') {
+                    console.log("Found a running thumbnail job on load. Starting poller.");
+                    this.isGeneratingThumbnails = true;
+                    this.thumbnailStatus = data;
+                    this.startThumbnailPolling();
+                }
+
+                // Check for running cleanup
+                response = await fetch('/api/library/cleanup/status');
+                data = await response.json();
+                if (data.status !== 'idle') {
+                    console.log("Found a running cleanup job on load. Starting poller.");
+                    this.isCleaningUp = true;
+                    this.cleanupStatus = data;
+                    this.startCleanupPolling();
+                }
+            } catch (e) {
+                console.error("Error checking task statuses on boot:", e);
+            }
         },
 
         // --- API Fetching ---
@@ -116,10 +155,9 @@ function videoApp() {
             }
         },
 
-        // [NEW] Separate function to pre-load all-video cache
         async fetchAllVideosForCache() {
             try {
-                if (this.appData.allVideos.length > 0) return; // Already cached
+                if (this.appData.allVideos.length > 0) return;
                 const response = await fetch('/api/videos_all');
                 if (!response.ok) throw new Error('Failed to load all videos');
                 const data = await response.json();
@@ -146,6 +184,10 @@ function videoApp() {
 
             this.isLoading = true;
 
+            if (this.currentView.type === 'smart_playlist' && isNewQuery) {
+                 this.fetchAllVideosForCache(); // Pre-load all authors for modal
+            }
+
             // Standard Playlist Exception: Not paginated
             if (this.currentView.type === 'standard_playlist') {
                 this.isLoading = false; 
@@ -171,7 +213,7 @@ function videoApp() {
                 return;
             }
 
-            // [MODIFIED] Smart Playlist is now server-side and paginated
+            // Standard Paginated Fetch
             const params = new URLSearchParams({
                 page: this.currentPage,
                 per_page: 30,
@@ -185,11 +227,10 @@ function videoApp() {
                 filterOptimized: this.filterSettings.optimized,
             });
 
-            // [NEW] If it's a smart playlist, add the filters to the request
+            // If it's a smart playlist, add the filters to the request
             if (this.currentView.type === 'smart_playlist' && this.currentView.id) {
                 const playlist = this.appData.smartPlaylists.find(p => p.id === this.currentView.id);
                 if (playlist && playlist.filters) {
-                    // This sends the raw JSON filter array to the server
                     params.append('smart_filters', JSON.stringify(playlist.filters));
                 }
             }
@@ -214,45 +255,8 @@ function videoApp() {
 
         // --- Computed Properties (Getters) ---
         get filteredVideos() {
-            // [REMOVED] All client-side 'smart_playlist' filtering is GONE.
-            // The server now handles all filtering for all views.
+            // All filtering is now server-side. This getter is just a pass-through.
             return this.appData.videos;
-        },
-
-        sortLogic(a, b) {
-            // This is now only used for client-side sorting on the *old* smart playlist system
-            // We can remove this once the new one is fully in place
-            if (this.currentView.type === 'history') {
-                const dateA = a.last_watched ? new Date(a.last_watched) : 0;
-                const dateB = b.last_watched ? new Date(b.last_watched) : 0;
-                return dateB - dateA;
-            }
-            let dateA, dateB;
-            const MAX_DATE = new Date(8640000000000000);
-            const MIN_DATE = new Date(0);
-            switch (this.sortOrder) {
-                case 'aired_oldest':
-                    dateA = a.aired_date ? new Date(a.aired_date) : MAX_DATE;
-                    dateB = b.aired_date ? new Date(b.aired_date) : MAX_DATE;
-                    return dateA - dateB;
-                case 'uploaded_newest':
-                    dateA = a.uploaded ? new Date(a.uploaded) : MIN_DATE;
-                    dateB = b.uploaded ? new Date(b.uploaded) : MIN_DATE;
-                    return dateB - dateA;
-                case 'uploaded_oldest':
-                    dateA = a.uploaded ? new Date(a.uploaded) : MAX_DATE;
-                    dateB = b.uploaded ? new Date(b.uploaded) : MAX_DATE;
-                    return dateA - dateB;
-                case 'duration_longest':
-                    return (b.duration || 0) - (a.duration || 0);
-                case 'duration_shortest':
-                    return (a.duration || 0) - (b.duration || 0);
-                case 'aired_newest':
-                default:
-                    dateA = a.aired_date ? new Date(a.aired_date) : MIN_DATE;
-                    dateB = b.aired_date ? new Date(b.aired_date) : MIN_DATE;
-                    return dateB - dateA;
-            }
         },
 
         getEmptyMessage() {
@@ -418,14 +422,12 @@ function videoApp() {
             }
         },
         
-        // [NEW] Functions to manage the new Smart Playlist Modal
         openSmartPlaylistSettings(playlist) {
             if (this.appData.allVideos.length === 0) {
                 alert("Please wait for all videos to load before editing filters.");
-                this.fetchAllVideosForCache(); // Trigger a load
+                this.fetchAllVideosForCache();
                 return;
             }
-            // Create a *deep copy* of the playlist for editing
             this.currentSmartPlaylist = JSON.parse(JSON.stringify(playlist));
             this.isSmartPlaylistModalOpen = true;
         },
@@ -452,7 +454,6 @@ function videoApp() {
                     throw new Error(updatedPlaylist.error || 'Failed to save filters');
                 }
 
-                // Update the playlist in our main appData
                 const index = this.appData.smartPlaylists.findIndex(p => p.id === playlistId);
                 if (index !== -1) {
                     this.appData.smartPlaylists[index] = updatedPlaylist;
@@ -460,7 +461,6 @@ function videoApp() {
                 
                 this.closeSmartPlaylistSettings();
                 
-                // If we are currently viewing this playlist, refresh the videos
                 if (this.currentView.type === 'smart_playlist' && this.currentView.id === playlistId) {
                     this.fetchVideos(true);
                 }
@@ -470,7 +470,6 @@ function videoApp() {
                 alert(`Error: ${e.message}`);
             }
         },
-        // [END NEW]
         
         // --- Standard Playlist Functions ---
         async openPlaylistModal(videoId) {
@@ -745,17 +744,17 @@ function videoApp() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ tag: nextTag })
             })
-            .then(res => {
-                if (!res.ok) throw new Error('Failed to update tag');
-                return res.json();
-            })
-            .then(updatedVideo => {
-                this.modalVideo = { ...this.modalVideo, ...updatedVideo };
-                this.updateVideoData(updatedVideo);
-            })
-            .catch(err => {
-                console.error('Failed to update video tag:', err);
-            });
+                .then(res => {
+                    if (!res.ok) throw new Error('Failed to update tag');
+                    return res.json();
+                })
+                .then(updatedVideo => {
+                    this.modalVideo = { ...this.modalVideo, ...updatedVideo };
+                    this.updateVideoData(updatedVideo);
+                })
+                .catch(err => {
+                    console.error('Failed to update video tag:', err);
+                });
         },
 
         // --- Content Rendering ---
@@ -899,7 +898,7 @@ function videoApp() {
         async scanNewVideos() {
             if (this.isAnyTaskRunning()) return;
             this.scanType = 'new';
-            this.isScanning = true; 
+            this.isScanning = true;
             try {
                 const response = await fetch('/api/scan_videos', {
                     method: 'POST',
@@ -929,7 +928,7 @@ function videoApp() {
             this.scanType = 'full';
             this.isScanning = true;
             try {
-                const response = await fetch('/api/scan_videos', { 
+                const response = await fetch('/api/scan_videos', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ full_scan: true })
@@ -950,7 +949,8 @@ function videoApp() {
         },
 
         startScanPolling() {
-            if (this.scanPollInterval) clearInterval(this.scanPollInterval);
+            if (this.scanPollInterval) return; // Poller is already running
+            console.log("Starting scan poller.");
             
             const poll = async () => {
                 try {
@@ -959,40 +959,35 @@ function videoApp() {
                     const data = await response.json();
                     this.scanStatus = data;
 
-                    if (data.status === 'idle') {
-                        this.stopScanPolling(true);
-                    } else if (data.status === 'error') {
-                        this.stopScanPolling(false);
+                    if (data.status === 'idle' || data.status === 'error') {
+                        const wasSuccessful = data.status === 'idle';
+                        this.stopScanPolling(); 
+                        if (wasSuccessful) {
+                            console.log('Video scan complete, fetching new data.');
+                            this.fetchMetadata();
+                            this.fetchVideos(true);
+                        }
                     } else {
                         this.isScanning = true;
-                        if (data.message.includes('Full')) {
-                            this.scanType = 'full';
-                        } else {
-                            this.scanType = 'new';
-                        }
+                        this.scanType = data.message.includes('Full') ? 'full' : 'new';
                     }
                 } catch (e) {
                     console.error(e);
                     this.scanStatus = { status: 'error', message: e.message };
-                    this.stopScanPolling(false);
+                    this.stopScanPolling();
                 }
             };
-            
             this.scanPollInterval = setInterval(poll, 3000);
         },
 
-        stopScanPolling(wasSuccessful) {
+        stopScanPolling() {
             if (this.scanPollInterval) {
                 clearInterval(this.scanPollInterval);
                 this.scanPollInterval = null;
+                console.log("Stopped scan poller.");
             }
             this.isScanning = false;
             this.scanType = 'idle';
-            if (wasSuccessful) {
-                console.log('Video scan complete, fetching new data.');
-                this.fetchMetadata();
-                this.fetchVideos(true);
-            }
         },
 
         async generateMissingThumbnails() {
@@ -1014,7 +1009,8 @@ function videoApp() {
         },
 
         startThumbnailPolling() {
-            if (this.thumbnailPollInterval) clearInterval(this.thumbnailPollInterval);
+            if (this.thumbnailPollInterval) return;
+            console.log("Starting thumbnail poller.");
 
             const poll = async () => {
                 try {
@@ -1022,33 +1018,32 @@ function videoApp() {
                     if (!response.ok) throw new Error('Status poll failed');
                     const data = await response.json();
                     this.thumbnailStatus = data;
-                    if (data.status === 'idle') {
-                        this.stopThumbnailPolling(true);
-                    } else if (data.status === 'error') {
-                        this.stopThumbnailPolling(false);
+                    if (data.status === 'idle' || data.status === 'error') {
+                        const wasSuccessful = data.status === 'idle';
+                        this.stopThumbnailPolling();
+                        if (wasSuccessful) {
+                            console.log('Thumbnail generation complete, fetching new data.');
+                            this.fetchVideos(true);
+                        }
                     } else {
                         this.isGeneratingThumbnails = true;
                     }
                 } catch (e) {
                     console.error(e);
                     this.thumbnailStatus.status = 'error';
-                    this.stopThumbnailPolling(false);
+                    this.stopThumbnailPolling();
                 }
             };
-            
             this.thumbnailPollInterval = setInterval(poll, 2000);
         },
 
-        stopThumbnailPolling(wasSuccessful) {
+        stopThumbnailPolling() {
             if (this.thumbnailPollInterval) {
                 clearInterval(this.thumbnailPollInterval);
                 this.thumbnailPollInterval = null;
+                console.log("Stopped thumbnail poller.");
             }
             this.isGeneratingThumbnails = false;
-            if (wasSuccessful) {
-                console.log('Thumbnail generation complete, fetching new data.');
-                this.fetchVideos(true);
-            }
         },
 
         async cleanupLibrary() {
@@ -1073,7 +1068,8 @@ function videoApp() {
         },
 
         startCleanupPolling() {
-            if (this.cleanupPollInterval) clearInterval(this.cleanupPollInterval);
+            if (this.cleanupPollInterval) return;
+            console.log("Starting cleanup poller.");
             
             const poll = async () => {
                 try {
@@ -1082,34 +1078,33 @@ function videoApp() {
                     const data = await response.json();
                     this.cleanupStatus = data;
 
-                    if (data.status === 'idle') {
-                        this.stopCleanupPolling(true);
-                    } else if (data.status === 'error') {
-                        this.stopCleanupPolling(false);
+                    if (data.status === 'idle' || data.status === 'error') {
+                        const wasSuccessful = data.status === 'idle';
+                        this.stopCleanupPolling();
+                        if (wasSuccessful) {
+                            console.log('Library cleanup complete, fetching new data.');
+                            this.fetchMetadata();
+                            this.fetchVideos(true);
+                        }
                     } else {
                         this.isCleaningUp = true;
                     }
                 } catch (e) {
                     console.error(e);
                     this.cleanupStatus = { status: 'error', message: e.message };
-                    this.stopCleanupPolling(false);
+                    this.stopCleanupPolling();
                 }
             };
-            
             this.cleanupPollInterval = setInterval(poll, 3000);
         },
 
-        stopCleanupPolling(wasSuccessful) {
+        stopCleanupPolling() {
             if (this.cleanupPollInterval) {
                 clearInterval(this.cleanupPollInterval);
                 this.cleanupPollInterval = null;
+                console.log("Stopped cleanup poller.");
             }
             this.isCleaningUp = false;
-            if (wasSuccessful) {
-                console.log('Library cleanup complete, fetching new data.');
-                this.fetchMetadata();
-                this.fetchVideos(true);
-            }
         },
 
         // --- Transcode Queue Logic ---
@@ -1127,6 +1122,7 @@ function videoApp() {
             if (this.isOptimizing(video.id)) return;
             this.transcodeQueue.push(video.id);
             this.processTranscodeQueue();
+            this.startTranscodePolling(); // Start the poller *when a job is added*
         },
 
         async deleteTranscode(video) {
@@ -1172,9 +1168,20 @@ function videoApp() {
             }
         },
 
+        stopTranscodePolling() {
+            if (this.transcodePollInterval) {
+                clearInterval(this.transcodePollInterval);
+                this.transcodePollInterval = null;
+                console.log("Stopped transcode poller (queue empty and server idle).");
+            }
+        },
+
         startTranscodePolling() {
-            if (this.transcodePollInterval) clearInterval(this.transcodePollInterval);
+            // This is the queue manager. Start it if it's not already running.
+            if (this.transcodePollInterval) return; 
             
+            console.log("Starting transcode queue poller.");
+
             this.transcodePollInterval = setInterval(async () => {
                 const response = await fetch('/api/transcode/status');
                 const data = await response.json();
@@ -1183,14 +1190,21 @@ function videoApp() {
                 this.transcodeStatus = data;
 
                 if (oldStatus !== 'idle' && data.status === 'idle') {
+                    // A job just finished
                     console.log(`Transcode job ${oldVideoId} finished. Checking queue.`);
                     this.refreshModalVideoData(oldVideoId);
                     this.processTranscodeQueue();
                 }
-                
-                if (data.status === 'idle' && this.transcodeQueue.length > 0) {
+                else if (data.status === 'idle' && this.transcodeQueue.length > 0) {
+                    // Server is idle, but queue has items
                     this.processTranscodeQueue();
                 }
+                else if (data.status === 'idle' && this.transcodeQueue.length === 0) {
+                    // Server is idle AND queue is empty. We can stop polling.
+                    this.stopTranscodePolling();
+                }
+                // else: a job is running, do nothing and wait for next poll
+                
             }, 3000);
         },
 
@@ -1347,11 +1361,6 @@ function seekVideo(event, timestampString) {
 }
 
 /**
- * [REMOVED] The old filterEditor is no longer needed.
- * We will add a new one in the next step.
- */
-
-/**
  * Alpine.js component for the recursive folder tree.
  */
 function folderTree(tree, basePath = '') {
@@ -1388,10 +1397,7 @@ function folderTree(tree, basePath = '') {
 document.addEventListener('alpine:init', () => {
     Alpine.data('videoApp', videoApp);
     Alpine.data('folderTree', folderTree);
-    // [REMOVED] filterEditor is no longer globally registered
-    
-    // [NEW] Register the new smartPlaylistEditor
-    Alpine.data('smartPlaylistEditor', smartPlaylistEditor);
+    Alpine.data('smartPlaylistEditor', smartPlaylistEditor); // Register the new editor
 
     Alpine.store('globalState', {
         openFolderPaths: [],
@@ -1400,7 +1406,7 @@ document.addEventListener('alpine:init', () => {
 });
 
 /**
- * [NEW] Alpine.js component for the Smart Playlist Settings modal.
+ * Alpine.js component for the Smart Playlist Settings modal.
  */
 function smartPlaylistEditor(playlist, allAuthors) {
     return {
@@ -1449,7 +1455,7 @@ function smartPlaylistEditor(playlist, allAuthors) {
                 } else if (this.newRuleDurationUnit === 'hours') {
                     durationInSeconds = duration * 3600;
                 } else {
-                    durationInSeconds = duration; // Fsllback for seconds
+                    durationInSeconds = duration; // Fallback for seconds
                 }
                 
                 newFilter.operator = this.newRuleOperator;
@@ -1473,14 +1479,23 @@ function smartPlaylistEditor(playlist, allAuthors) {
         },
 
         getRuleLabel(filter) {
-            switch(filter.type) {
+            switch (filter.type) {
                 case 'title':
                     return `Title contains (any of): [${filter.value.join(', ')}]`;
                 case 'duration':
                     const operator = filter.operator === 'gt' ? '>' : '<';
                     // Convert seconds back to minutes for display
-                    const minutes = Math.floor(filter.value / 60);
-                    return `Duration is ${operator} ${minutes} minutes`;
+                    const value = filter.value;
+                    let displayValue = value;
+                    let displayUnit = 'seconds';
+                    if (value % 3600 === 0) {
+                        displayValue = value / 3600;
+                        displayUnit = 'hours';
+                    } else if (value % 60 === 0) {
+                        displayValue = value / 60;
+                        displayUnit = 'minutes';
+                    }
+                    return `Duration is ${operator} ${displayValue} ${displayUnit}`;
                 default:
                     return 'Unknown filter';
             }
