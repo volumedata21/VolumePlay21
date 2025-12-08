@@ -275,11 +275,17 @@ function videoApp() {
         },
 
         filterByFolderTag(tag) {
-            if (tag === 'clear_all') { this.setView('all'); return; }
+            if (tag === 'clear_all') {
+                // When clearing, we usually want to close the menu to see results
+                this.setView('all');
+                return;
+            }
             const currentPath = this.currentFilterPath;
             const newPath = currentPath ? currentPath + '/' + tag : tag;
             if (this.isModalOpen) this.closeModal();
-            this.setView('folder', newPath, null);
+            
+            // CHANGED: Pass 'true' as the 4th argument to keep menu open
+            this.setView('folder', newPath, null, true);
         },
 
         // Smart Playlist CRUD
@@ -354,18 +360,30 @@ function videoApp() {
         goBackOneFilter() {
             if (this.filterHistory.length === 0) return;
             const last = this.filterHistory.pop();
-            this.setView(last.type, last.id, last.author);
+            const keepOpen = last.type === 'folder';
+            this.setView(last.type, last.id, last.author, keepOpen);
         },
-        setView(type, id = null, author = null) {
+        setView(type, id = null, author = null, keepMenuOpen = false) {
             const current = Alpine.store('globalState').currentView;
             if (current.type === 'folder' && type === 'folder' && current.id !== id) {
-                this.filterHistory.push({ type: current.type, id: current.id, author: current.author });
+                this.filterHistory.push({
+                    type: current.type,
+                    id: current.id,
+                    author: current.author,
+                    title: this.currentTitle
+                });
             }
-            if (type !== 'folder') this.filterHistory = [];
-            Alpine.store('globalState').currentView = { type, id, author };
+            if (type !== 'folder') {
+                this.filterHistory = [];
+            }
+            Alpine.store('globalState').currentView = { type: type, id: id, author: author };
             this.currentView = Alpine.store('globalState').currentView;
             this.updateTitle();
-            this.isMobileMenuOpen = false;
+            
+            // CHANGED: Only close mobile menu if we didn't explicitly ask to keep it open
+            if (!keepMenuOpen) {
+                this.isMobileMenuOpen = false;
+            }
         },
         updateTitle() {
             const { type, id, author } = this.currentView;
