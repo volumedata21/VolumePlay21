@@ -5,8 +5,8 @@
         x-transition:leave="ease-in duration-200" x-transition:leave-start="opacity-100"
         x-transition:leave-end="opacity-0"></div>
 
-    <div class="relative z-10 w-full max-w-5xl overflow-hidden rounded-lg bg-[#111827] shadow-xl"
-        x-show="isModalOpen" x-transition:enter="ease-out duration-300"
+    <div class="relative z-10 w-full max-w-5xl overflow-hidden rounded-lg bg-[#111827] shadow-xl" x-show="isModalOpen"
+        x-transition:enter="ease-out duration-300"
         x-transition:enter-start="opacity-0 translate-y-4 sm:translate-y-0 sm:scale-95"
         x-transition:enter-end="opacity-100 translate-y-0 sm:scale-100" x-transition:leave="ease-in duration-200"
         x-transition:leave-start="opacity-100 translate-y-0 sm:scale-100"
@@ -22,12 +22,12 @@
             <div x-data="{ isMoreMenuOpen: false }">
                 <div class="relative">
                     <div class="p-0 bg-black relative z-10 flex justify-center min-h-[300px]">
-                        
+
                         <template x-if="modalVideo.media_type === 'video'">
-                            <video id="main-video-player"
-                                class="w-full max-h-[80vh] h-auto relative z-10" :src="currentVideoSrc" controls
-                                autoplay @ended="handleVideoEnd()" x-ref="videoPlayer" crossorigin="anonymous"
-                                @enterpictureinpicture="handleEnterPiP()" @leavepictureinpicture="handleLeavePiP()">
+                            <video id="main-video-player" class="w-full max-h-[80vh] h-auto relative z-10"
+                                :src="currentVideoSrc" controls autoplay @ended="handleVideoEnd()" x-ref="videoPlayer"
+                                crossorigin="anonymous" @enterpictureinpicture="handleEnterPiP()"
+                                @leavepictureinpicture="handleLeavePiP()">
                                 <template x-if="modalVideo.subtitle_url">
                                     <track :label="modalVideo.subtitle_label" kind="subtitles"
                                         :src="modalVideo.subtitle_url" :srclang="modalVideo.subtitle_lang">
@@ -37,9 +37,9 @@
                         </template>
 
                         <template x-if="modalVideo.media_type === 'image'">
-                            <img :src="currentVideoSrc" 
-                                 class="max-h-[80vh] w-auto max-w-full object-contain relative z-10" 
-                                 alt="Full screen view">
+                            <img :src="currentVideoSrc"
+                                class="max-h-[80vh] w-auto max-w-full object-contain relative z-10"
+                                alt="Full screen view">
                         </template>
 
                     </div>
@@ -79,9 +79,9 @@
 
                             <div class="lg:hidden mt-4" x-show="modalVideo.media_type === 'video'">
                                 <div class="grid grid-cols-6 gap-2 mb-2">
-                                    <button @click.prevent="playPreviousVideo()" title="Previous Video"
-                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                        <i class="material-icons" style="font-size: 20px;">skip_previous</i>
+                                    <button @click.prevent="playPreviousVideo()"
+                                        title="Previous Video (Shift + Left Arrow)" class="...">
+                                        <i class="material-icons">skip_previous</i>
                                     </button>
                                     <button @click.prevent="previousFrame()" title="Previous Frame"
                                         class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
@@ -100,9 +100,9 @@
                                         class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                         <i class="material-icons" style="font-size: 20px;">chevron_right</i>
                                     </button>
-                                    <button @click.prevent="playNextVideo()" title="Next Video"
-                                        class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
-                                        <i class="material-icons" style="font-size: 20px;">skip_next</i>
+                                    <button @click.prevent="playNextVideo()" title="Next Video (Shift + Right Arrow)"
+                                        class="...">
+                                        <i class="material-icons">skip_next</i>
                                     </button>
                                 </div>
 
@@ -137,9 +137,10 @@
                                         <i class="material-icons" style="font-size: 20px;">speed</i>
                                         <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                     </button>
-                                    
+
                                     <div class="relative">
-                                        <button @click="isMoreMenuOpen = !isMoreMenuOpen" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                        <button @click="isMoreMenuOpen = !isMoreMenuOpen"
+                                            class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                             <i class="material-icons">more_vert</i>
                                             <span>More Actions</span>
                                         </button>
@@ -153,40 +154,57 @@
                                             class="absolute bottom-full right-0 z-10 mb-2 w-56 origin-bottom-right rounded-md bg-[var(--bg-darkest)] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
                                             x-cloak>
                                             <div class="py-1" role="none">
-                                                <a href="#" @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
+                                                <a href="#"
+                                                    @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false"
+                                                    class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
                                                     <i class="material-icons" style="font-size: 20px;">info</i>
                                                     <span>More Info</span>
                                                 </a>
                                                 <template x-if="modalVideo.media_type === 'video'">
                                                     <div>
-                                                        <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
-                                                            <button @click.prevent="createCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                                <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                                        <template
+                                                            x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                            <button
+                                                                @click.prevent="createCustomThumb(); isMoreMenuOpen = false"
+                                                                class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                                <i class="material-icons"
+                                                                    style="font-size: 20px;">add_photo_alternate</i>
                                                                 <span>Create Thumb</span>
                                                             </button>
                                                         </template>
-                                                        <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
-                                                            <button @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                                <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                        <template
+                                                            x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
+                                                            <button
+                                                                @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false"
+                                                                class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                                <i class="material-icons"
+                                                                    style="font-size: 20px;">delete_outline</i>
                                                                 <span>Remove Thumb</span>
                                                             </button>
                                                         </template>
-                                                        
+
                                                         <div class="border-t border-[var(--divider-color)] my-1"></div>
 
-                                                        <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                                            <button @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                                <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                                        <template
+                                                            x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                            <button
+                                                                @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false"
+                                                                class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                                <i class="material-icons"
+                                                                    style="font-size: 20px;">movie_filter</i>
                                                                 <span>Optimize</span>
                                                             </button>
                                                         </template>
-                                                        
-                                                        </div>
+
+                                                    </div>
                                                 </template>
-                                                
+
                                                 <template x-if="modalVideo.youtube_id">
-                                                    <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
-                                                        <i class="material-icons" style="font-size: 20px;">smart_display</i>
+                                                    <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
+                                                        target="_blank"
+                                                        class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
+                                                        <i class="material-icons"
+                                                            style="font-size: 20px;">smart_display</i>
                                                         <span>YouTube</span>
                                                     </a>
                                                 </template>
@@ -230,7 +248,8 @@
                                         </div>
                                         <div x-show="modalVideo.media_type === 'video'">
                                             <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Length</h4>
-                                            <p class="!mt-0.5" x-text="formatDuration(modalVideo.duration) || 'N/A'"></p>
+                                            <p class="!mt-0.5" x-text="formatDuration(modalVideo.duration) || 'N/A'">
+                                            </p>
                                         </div>
                                         <div x-show="modalVideo.media_type === 'video'">
                                             <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Codec</h4>
@@ -238,29 +257,35 @@
                                         </div>
                                     </div>
                                     <div>
-                                        <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files</h4>
+                                        <h4 class="font-semibold text-[var(--text-secondary)] !m-0">Associated Files
+                                        </h4>
                                         <div class="!mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
                                             <span class="inline-flex items-center gap-1">
-                                                <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">
-                                                    <span x-text="modalVideo.media_type === 'video' ? 'videocam' : 'image'"></span>
+                                                <i class="material-icons text-[var(--text-highlight)]"
+                                                    style="font-size: 16px;">
+                                                    <span
+                                                        x-text="modalVideo.media_type === 'video' ? 'videocam' : 'image'"></span>
                                                 </i>
                                                 <span x-text="modalVideo.file_format"></span>
                                             </span>
                                             <template x-if="modalVideo.has_subtitle">
                                                 <span class="inline-flex items-center gap-1">
-                                                    <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">subtitles</i>
+                                                    <i class="material-icons text-[var(--text-highlight)]"
+                                                        style="font-size: 16px;">subtitles</i>
                                                     <span>SRT</span>
                                                 </span>
                                             </template>
                                             <template x-if="modalVideo.has_thumbnail">
                                                 <span class="inline-flex items-center gap-1">
-                                                    <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">image</i>
+                                                    <i class="material-icons text-[var(--text-highlight)]"
+                                                        style="font-size: 16px;">image</i>
                                                     <span>JPG</span>
                                                 </span>
                                             </template>
                                             <template x-if="modalVideo.has_nfo">
                                                 <span class="inline-flex items-center gap-1">
-                                                    <i class="material-icons text-[var(--text-highlight)]" style="font-size: 16px;">description</i>
+                                                    <i class="material-icons text-[var(--text-highlight)]"
+                                                        style="font-size: 16px;">description</i>
                                                     <span>NFO</span>
                                                 </span>
                                             </template>
@@ -284,8 +309,7 @@
                                     class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                     <i class="material-icons" style="font-size: 20px;">fast_rewind</i>
                                 </button>
-                                <button @click.prevent="$refs.videoPlayer.currentTime += 10"
-                                    title="Seek Forward 10s"
+                                <button @click.prevent="$refs.videoPlayer.currentTime += 10" title="Seek Forward 10s"
                                     class="flex items-center justify-center p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                     <i class="material-icons" style="font-size: 20px;">fast_forward</i>
                                 </button>
@@ -330,9 +354,10 @@
                                     <i class="material-icons" style="font-size: 20px;">speed</i>
                                     <span x-text="currentPlaybackSpeed.toFixed(2) + 'x'"></span>
                                 </button>
-                                
+
                                 <div class="relative">
-                                    <button @click="isMoreMenuOpen = !isMoreMenuOpen" class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
+                                    <button @click="isMoreMenuOpen = !isMoreMenuOpen"
+                                        class="w-full flex items-center justify-center gap-2 p-2.5 rounded-md transition-colors text-sm bg-[#29334b] hover:bg-[#43547c] text-[#9CA3AF] hover:text-[#FFFFFF]">
                                         <i class="material-icons">more_vert</i>
                                         <span>More Actions</span>
                                     </button>
@@ -346,74 +371,104 @@
                                         class="absolute top-full right-0 z-10 mt-2 w-56 origin-top-right rounded-md bg-[var(--bg-darkest)] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none"
                                         x-cloak>
                                         <div class="py-1" role="none">
-                                            <a href="#" @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
+                                            <a href="#"
+                                                @click.prevent="document.getElementById('more-info-panel').scrollIntoView({ behavior: 'smooth' }); isMoreMenuOpen = false"
+                                                class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] flex items-center gap-2 px-4 py-2 text-sm w-full text-left">
                                                 <i class="material-icons" style="font-size: 20px;">info</i>
                                                 <span>More Info</span>
                                             </a>
                                             <template x-if="modalVideo.media_type === 'video'">
                                                 <div>
                                                     <template x-if="!modalVideo.has_custom_thumb && !isCreatingThumb">
-                                                        <button @click.prevent="createCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                            <i class="material-icons" style="font-size: 20px;">add_photo_alternate</i>
+                                                        <button
+                                                            @click.prevent="createCustomThumb(); isMoreMenuOpen = false"
+                                                            class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">add_photo_alternate</i>
                                                             <span>Create Thumb</span>
                                                         </button>
                                                     </template>
                                                     <template x-if="modalVideo.has_custom_thumb && !isCreatingThumb">
-                                                        <button @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                        <button
+                                                            @click.prevent="deleteCustomThumb(); isMoreMenuOpen = false"
+                                                            class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">delete_outline</i>
                                                             <span>Remove Thumb</span>
                                                         </button>
                                                     </template>
                                                     <template x-if="isCreatingThumb">
-                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
-                                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                        <span
+                                                            class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons animate-spin"
+                                                                style="font-size: 20px;">sync</i>
                                                             <span>Working...</span>
                                                         </span>
                                                     </template>
-                                                    
+
                                                     <div class="border-t border-[var(--divider-color)] my-1"></div>
 
-                                                    <template x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                                        <button @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                            <i class="material-icons" style="font-size: 20px;">movie_filter</i>
+                                                    <template
+                                                        x-if="!modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                        <button
+                                                            @click.prevent="startTranscode(modalVideo); isMoreMenuOpen = false"
+                                                            class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">movie_filter</i>
                                                             <span>Optimize</span>
                                                         </button>
                                                     </template>
                                                     <template x-if="isCurrentlyTranscoding(modalVideo.id)">
-                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
-                                                            <i class="material-icons animate-spin" style="font-size: 20px;">sync</i>
+                                                        <span
+                                                            class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons animate-spin"
+                                                                style="font-size: 20px;">sync</i>
                                                             <span>Optimizing...</span>
                                                         </span>
                                                     </template>
                                                     <template x-if="isQueued(modalVideo.id)">
-                                                        <span class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
-                                                            <i class="material-icons" style="font-size: 20px;">hourglass_top</i>
+                                                        <span
+                                                            class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-secondary)] opacity-70">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">hourglass_top</i>
                                                             <span>Queued</span>
                                                         </span>
                                                     </template>
-                                                    <template x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
-                                                        <button @click.prevent="deleteTranscode(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                            <i class="material-icons" style="font-size: 20px;">delete_outline</i>
+                                                    <template
+                                                        x-if="modalVideo.has_transcode && !isOptimizing(modalVideo.id)">
+                                                        <button
+                                                            @click.prevent="deleteTranscode(modalVideo); isMoreMenuOpen = false"
+                                                            class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">delete_outline</i>
                                                             <span>Remove Optimized</span>
                                                         </button>
                                                     </template>
                                                     <template x-if="modalVideo.has_transcode">
-                                                        <a :href="modalVideo.transcode_download_url" class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]" title="Download optimized MP4">
-                                                            <i class="material-icons" style="font-size: 20px;">download_for_offline</i>
+                                                        <a :href="modalVideo.transcode_download_url"
+                                                            class="flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]"
+                                                            title="Download optimized MP4">
+                                                            <i class="material-icons"
+                                                                style="font-size: 20px;">download_for_offline</i>
                                                             <span>Download Optimized</span>
                                                         </a>
                                                     </template>
 
                                                     <div class="border-t border-[var(--divider-color)] my-1"></div>
-                                                    
-                                                    <button @click.prevent="cycleVideoTag(modalVideo); isMoreMenuOpen = false" class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
-                                                        <i class="material-icons" style="font-size: 20px;" x-text="getVideoTagIcon(modalVideo)"></i>
+
+                                                    <button
+                                                        @click.prevent="cycleVideoTag(modalVideo); isMoreMenuOpen = false"
+                                                        class="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-[var(--text-main)] hover:bg-[var(--bg-highlight)]">
+                                                        <i class="material-icons" style="font-size: 20px;"
+                                                            x-text="getVideoTagIcon(modalVideo)"></i>
                                                         <span x-text="getVideoTagText(modalVideo)"></span>
                                                     </button>
                                                 </div>
                                             </template>
                                             <template x-if="modalVideo.youtube_id">
-                                                <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id" target="_blank" class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
+                                                <a :href="'https://www.youtube.com/watch?v=' + modalVideo.youtube_id"
+                                                    target="_blank"
+                                                    class="text-[var(--text-main)] hover:bg-[var(--bg-highlight)] yt-icon flex items-center gap-2 px-4 py-2 text-sm">
                                                     <i class="material-icons" style="font-size: 20px;">smart_display</i>
                                                     <span>YouTube</span>
                                                 </a>

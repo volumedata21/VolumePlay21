@@ -38,8 +38,8 @@
     :class="{ 'overflow-hidden': isMobileMenuOpen || isModalOpen || isPlaylistModalOpen || isSmartPlaylistModalOpen }"
     @save-smart-playlist-filters.window="saveSmartPlaylistSettings($event.detail)"
     
-    @keydown.window.arrow-right="if(isModalOpen) playNextVideo()"
-    @keydown.window.arrow-left="if(isModalOpen) playPreviousVideo()"
+    @keydown.window.arrow-right="handleKeyNavigation('right', $event)"
+    @keydown.window.arrow-left="handleKeyNavigation('left', $event)"
     @keydown.window="if($event.key === '[' && $event.target.tagName !== 'INPUT' && $event.target.tagName !== 'TEXTAREA') toggleSidebar()"
     @keydown.window.escape="isMobileMenuOpen = false; if(isModalOpen) closeModal()">
     

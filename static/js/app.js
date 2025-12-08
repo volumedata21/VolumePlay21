@@ -452,6 +452,31 @@ function videoApp() {
             this.setPlaybackSpeed(this.playbackRates[(idx + 1) % this.playbackRates.length]);
         },
 
+        // --- Keyboard Navigation Handler ---
+        handleKeyNavigation(direction, event) {
+            // 1. Safety checks: Modal must be open, no inputs focused
+            if (!this.isModalOpen || !this.modalVideo) return;
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+
+            // 2. Logic: If it's an Image OR Shift is held -> Navigate Items
+            //    (Shift+Right = Next Video, Right on Image = Next Image)
+            if (this.modalVideo.media_type === 'image' || event.shiftKey) {
+                if (direction === 'right') this.playNextVideo();
+                else this.playPreviousVideo();
+                return;
+            }
+
+            // 3. Logic: If it's a Video and Shift is NOT held -> Seek Time
+            if (this.modalVideo.media_type === 'video' && this.$refs.videoPlayer) {
+                const seekAmount = 5; // Seconds
+                if (direction === 'right') {
+                    this.$refs.videoPlayer.currentTime += seekAmount;
+                } else {
+                    this.$refs.videoPlayer.currentTime -= seekAmount;
+                }
+            }
+        },
+
         // Tags & Metadata
         getVideoTagText(v) {
             if (v.is_short) return 'Tag: Short';
