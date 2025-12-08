@@ -1,12 +1,16 @@
 <aside
-    class="fixed inset-y-0 left-0 z-40 flex w-72 transform flex-col border-r border-[var(--divider-color)] bg-[var(--bg-medium)] transition-transform duration-300 ease-in-out lg:translate-x-0"
-    :class="{ '-translate-x-full': !isMobileMenuOpen, 'translate-x-0': isMobileMenuOpen }" x-cloak>
+    class="fixed inset-y-0 left-0 z-40 flex w-72 transform flex-col border-r border-[var(--divider-color)] bg-[var(--bg-medium)] transition-transform duration-300 ease-in-out"
+    :class="{ 
+        '-translate-x-full': !isMobileMenuOpen && !isDesktopSidebarOpen, 
+        'translate-x-0': isMobileMenuOpen || isDesktopSidebarOpen,
+        'lg:translate-x-0': isDesktopSidebarOpen,
+        'lg:-translate-x-full': !isDesktopSidebarOpen
+    }" x-cloak>
 
     <div class="flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] px-4">
         <a href="#" @click.prevent="setView('all'); searchQuery=''" class="flex items-center gap-3 group">
             <i class="material-icons" style="font-size:28px;color:#DD3D2D;">ondemand_video</i>
-            <span
-                class="text-lg font-semibold text-[var(--text-bright)] group-hover:text-[var(--text-main)]">VolumePlay21</span>
+            <span class="text-lg font-semibold text-[var(--text-bright)] group-hover:text-[var(--text-main)]">VolumePlay21</span>
         </a>
         <div class="flex items-center gap-2">
             <button type="button"
@@ -195,6 +199,20 @@
                            }">movie_filter</i>
                     <span>Optimized</span>
                 </button>
+
+                <div class="border-t border-[var(--divider-color)] my-2"></div>
+
+                <label for="showImages" class="flex items-center justify-between cursor-pointer group">
+                    <span class="text-sm text-[var(--text-main)] group-hover:text-white transition-colors">Show Images</span>
+                    <input id="showImages" type="checkbox" x-model="filterSettings.showImages" class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)] cursor-pointer">
+                </label>
+                
+                <div x-show="filterSettings.showImages" x-transition class="pl-2">
+                    <label for="showThumbnails" class="flex items-center justify-between cursor-pointer group mt-2">
+                        <span class="text-xs text-[var(--text-secondary)] group-hover:text-[var(--text-main)] transition-colors">Include Thumbnails</span>
+                        <input id="showThumbnails" type="checkbox" x-model="filterSettings.showThumbnails" class="rounded bg-[var(--bg-medium)] border-[var(--divider-color)] text-[var(--text-highlight)] focus:ring-[var(--highlight-ring)] cursor-pointer">
+                    </label>
+                </div>
 
                 <div class="border-t border-[var(--divider-color)] my-2"></div>
 

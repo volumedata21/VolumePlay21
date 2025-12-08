@@ -1,10 +1,19 @@
 <header
     class="sticky top-0 z-10 flex h-16 shrink-0 items-center justify-between border-b border-[var(--divider-color)] bg-[var(--bg-darkest)]/80 px-4 backdrop-blur-sm sm:px-6 lg:px-8">
+    
     <button type="button"
         class="-ml-2.5 p-2.5 text-[var(--text-secondary)] hover:text-[var(--text-bright)] lg:hidden"
         @click="isMobileMenuOpen = true">
         <i class="material-icons" style="font-size: 24px;">menu</i>
     </button>
+
+    <button type="button"
+        class="hidden lg:block -ml-2.5 mr-4 p-2 text-[var(--text-secondary)] hover:text-[var(--text-bright)] transition-colors"
+        @click="toggleSidebar()"
+        title="Toggle Sidebar">
+        <i class="material-icons" style="font-size: 24px;">menu</i>
+    </button>
+
     <div class="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
         <button
             x-show="currentView.type === 'author' || currentView.type === 'folder' || currentView.type === 'smart_playlist' || currentView.type === 'standard_playlist'"
@@ -28,7 +37,6 @@
             <span class="material-icons" style="font-size: 24px;">arrow_back</span>
         </button>
 
-        <!-- Show Author Poster -->
         <template x-if="appData.currentAuthorPosterUrl">
             <img :src="appData.currentAuthorPosterUrl" alt="Author Poster" class="w-10 h-10 object-cover rounded-full flex-shrink-0">
         </template>
