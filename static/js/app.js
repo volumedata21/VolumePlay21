@@ -29,6 +29,7 @@ function videoApp() {
 
         // --- Player State ---
         isAutoplayEnabled: true,
+        isShuffleEnabled: false,
         currentPlaybackSpeed: 1.0,
         playbackRates: [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0],
 
@@ -136,6 +137,8 @@ function videoApp() {
         },
 
         async fetchVideos(isNewQuery = false) {
+            if (isNewQuery) this.isShuffleEnabled = false; 
+            
             if (this.isLoading) return;
 
             if (isNewQuery) {
@@ -272,6 +275,22 @@ function videoApp() {
         toggleSidebar() {
             this.isDesktopSidebarOpen = !this.isDesktopSidebarOpen;
             localStorage.setItem('isDesktopSidebarOpen', this.isDesktopSidebarOpen);
+        },
+
+        toggleShuffle() {
+            this.isShuffleEnabled = !this.isShuffleEnabled;
+            
+            if (this.isShuffleEnabled) {
+                // Perform Client-side Shuffle (Fisher-Yates algorithm)
+                let array = this.appData.videos;
+                for (let i = array.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [array[i], array[j]] = [array[j], array[i]];
+                }
+            } else {
+                // Reload the original sorted order from the server
+                this.fetchVideos(true);
+            }
         },
 
         filterByFolderTag(tag) {

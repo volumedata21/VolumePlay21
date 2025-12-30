@@ -43,11 +43,16 @@
         <h1 class="truncate text-xl font-semibold text-[var(--text-bright)]" x-text="currentView.type === 'author' ? currentView.author : currentTitle"></h1>
     </div>
     <div class="flex shrink-0 items-center gap-2 pl-2 sm:pl-4">
+        
+        <button 
+            @click="toggleShuffle()" 
+            class="p-2 transition-colors"
+            :class="isShuffleEnabled ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)] hover:text-[var(--text-bright)]'"
+            title="Shuffle Videos">
+            <i class="material-icons" style="font-size: 20px;">shuffle</i>
+        </button>
         <div class="flex items-center gap-1.5" title="Toggle Autoplay">
-            <span class="material-icons text-sm"
-                :class="isAutoplayEnabled ? 'text-[var(--text-highlight)]' : 'text-[var(--text-secondary)]'">
-                autoplay
-            </span>
+            
             <button @click="isAutoplayEnabled = !isAutoplayEnabled"
                 class="relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-[var(--highlight-ring)] focus:ring-offset-2 focus:ring-offset-[var(--bg-medium)]"
                 :class="isAutoplayEnabled ? 'bg-[var(--text-highlight)]' : 'bg-[var(--divider-color)]'"
