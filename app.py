@@ -12,6 +12,7 @@ from sqlalchemy.sql import func, or_, and_, select, delete
 import mimetypes
 import hashlib
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 from watchdog.events import FileSystemEventHandler
 
 ## --- App Setup ---
@@ -35,8 +36,8 @@ db = SQLAlchemy(app)
 APP_HW_ACCEL_MODE = os.environ.get('HW_ACCEL_TYPE', 'none').lower()
 if APP_HW_ACCEL_MODE == 'qsv':
     print("***********************************************************")
-    print("*** [INFO] Hardware acceleration: Intel QSV ENABLED     ***")
-    print("*** Make sure /dev/dri is passed to this container.   ***")
+    print("*** [INFO] Hardware acceleration: Intel QSV ENABLED       ***")
+    print("*** Make sure /dev/dri is passed to this container.    ***")
     print("***********************************************************")
 else:
     print("***********************************************************")
@@ -827,6 +828,32 @@ def trigger_auto_scan():
         scan_thread.start()
     else:
         print("Watchdog: Scan already in progress, skipping trigger.")
+        
+def start_watchdog():
+    """Starts the background file observer."""
+    event_handler = LibraryEventHandler()
+    
+    # --- UPDATED LOGIC ---
+    try:
+        # Try using the native OS observer (Inotify) first
+        observer = Observer()
+        observer.schedule(event_handler, video_dir, recursive=True)
+        observer.start()
+        print(f"*** Watchdog Active: Monitoring {video_dir} using Native Inotify ***")
+    except OSError as e:
+        # Check for "Limit Reached" error (Errno 28)
+        if e.errno == 28: 
+            print("!!! Inotify watch limit reached. Falling back to PollingObserver. !!!")
+            print("!!! (This uses more CPU but works on systems with low limits) !!!")
+            
+            # Fallback to Polling
+            observer = PollingObserver()
+            observer.schedule(event_handler, video_dir, recursive=True)
+            observer.start()
+            print(f"*** Watchdog Active: Monitoring {video_dir} using Polling ***")
+        else:
+            # Re-raise if it's a different error
+            raise e
 
 class LibraryEventHandler(FileSystemEventHandler):
     """Handles file system events (create/delete/move)."""
@@ -854,14 +881,6 @@ class LibraryEventHandler(FileSystemEventHandler):
         if CLEANUP_LOCK.acquire(blocking=False):
             cleanup_thread = threading.Thread(target=_cleanup_library_task)
             cleanup_thread.start()
-
-def start_watchdog():
-    """Starts the background file observer."""
-    event_handler = LibraryEventHandler()
-    observer = Observer()
-    observer.schedule(event_handler, video_dir, recursive=True)
-    observer.start()
-    print(f"*** Watchdog Active: Monitoring {video_dir} for changes ***")
 
 ## --- Initialization Function ---
 def initialize_database():

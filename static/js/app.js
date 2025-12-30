@@ -103,22 +103,35 @@ function videoApp() {
             this.$watch('sortOrder', () => this.fetchVideos(true));
             this.$watch('currentView', () => this.fetchVideos(true), { deep: true });
 
-            this.fetchMetadata();
-            this.fetchVideos(true);
             this.checkAllTaskStatuses();
             this.startTranscodePolling(); 
 
+            // Handle Window Focus
             window.addEventListener('focus', () => {
                 if (!this.isAnyTaskRunning()) {
                     this.fetchVideos(true);
                 }
             });
 
+            // Auto-refresh interval
             setInterval(() => {
                 if (!this.isModalOpen && !this.isPlaylistModalOpen && !this.isSmartPlaylistModalOpen && !this.isAnyTaskRunning()) {
                     this.fetchVideos(true);
                 }
             }, 3600000);
+
+            // --- NEW: Handle Browser Back Button ---
+            window.addEventListener('popstate', (event) => {
+                // If the modal is open, the back button means "close modal"
+                if (this.isModalOpen) {
+                    this.stopAndSaveVideo();
+                    this.modalVideo = null;
+                    this.isModalOpen = false;
+                }
+            });
+
+            this.fetchMetadata();
+            this.fetchVideos(true);
         },
 
         // --- API Fetching ---
@@ -429,6 +442,10 @@ function videoApp() {
             if (document.pictureInPictureElement) await document.exitPictureInPicture();
             this.modalVideo = video;
             this.isModalOpen = true;
+
+            // --- NEW: Push a 'virtual' page to history ---
+            // This ensures the back button has something to 'pop' without leaving the site
+            history.pushState({ modalOpen: true }, '', '#player');
             
             if (video.media_type === 'image') {
                 this.currentVideoSrc = video.video_url; 
@@ -451,20 +468,22 @@ function videoApp() {
                 this.updateVideoProgress(this.modalVideo, dur);
             }
         },
+        
         closeModal() {
+            // --- NEW: Check if we need to revert history ---
+            if (history.state && history.state.modalOpen) {
+                history.back();
+                return; 
+            }
+
+            // Fallback for regular closing (if no history state exists)
             if (!document.pictureInPictureElement) {
                 this.stopAndSaveVideo();
                 this.modalVideo = null;
             }
             this.isModalOpen = false;
         },
-        handleEnterPiP() { this.isModalOpen = false; },
-        handleLeavePiP() { this.stopAndSaveVideo(); this.modalVideo = null; },
-        handleVideoEnd() {
-            this.stopAndSaveVideo();
-            if (this.isAutoplayEnabled) this.playNextVideo();
-            else this.closeModal();
-        },
+
         navigateToAuthorFilter(author) {
             this.closeModal();
             this.$nextTick(() => this.setView('author', null, author));
